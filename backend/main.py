@@ -174,7 +174,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         await broadcast_task_update(task_id, tasks[task_id])
         
         # 下载并转换视频
-        audio_path = await video_processor.download_and_convert(url, TEMP_DIR)
+        audio_path, video_title = await video_processor.download_and_convert(url, TEMP_DIR)
         
         # 下载完成，更新状态
         tasks[task_id].update({
@@ -206,6 +206,9 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         # 优化转录文本：修正错别字，按含义分段
         script = await summarizer.optimize_transcript(raw_script)
         
+        # 为转录文本添加标题
+        script_with_title = f"# {video_title}\n\n{script}"
+        
         # 更新状态：生成摘要
         tasks[task_id].update({
             "progress": 75,
@@ -215,14 +218,15 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         await broadcast_task_update(task_id, tasks[task_id])
         
         # 生成摘要
-        summary = await summarizer.summarize(script, summary_language)
+        summary = await summarizer.summarize(script, summary_language, video_title)
         
         # 更新状态：完成
         tasks[task_id].update({
             "status": "completed",
             "progress": 100,
             "message": "处理完成！",
-            "script": script,
+            "video_title": video_title,
+            "script": script_with_title,
             "summary": summary
         })
         save_tasks(tasks)

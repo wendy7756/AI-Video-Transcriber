@@ -1,13 +1,18 @@
+<div align="center">
+
 # AI Video Transcriber
 
-*English | [中文](README_ZH.md)*
+English | [中文](README_ZH.md)
 
-An AI-powered video transcription and summarization tool that supports multiple video platforms including YouTube, Bilibili, and more.
+
+An AI-powered video transcription and summarization tool that supports multiple video platforms including YouTube, Tiktok, Bilibili, and more.
+</div">
 
 ## ✨ Features
 
-- 🎥 **Multi-Platform Support**: Works with YouTube, Bilibili, and all platforms supported by yt-dlp
+- 🎥 **Multi-Platform Support**: Works with YouTube, Tiktok, Bilibili, and more
 - 🗣️ **Intelligent Transcription**: High-accuracy speech-to-text using Faster-Whisper
+- 🤖 **AI Text Optimization**: Automatic typo correction, sentence completion, and intelligent paragraphing
 - 🌍 **Multi-Language Summaries**: Generate intelligent summaries in multiple languages
 - 📝 **Markdown Output**: Both transcripts and summaries are displayed and downloadable in Markdown format
 - ⚡ **Real-Time Progress**: Live progress tracking and status updates
@@ -20,7 +25,7 @@ An AI-powered video transcription and summarization tool that supports multiple 
 
 - Python 3.8+
 - FFmpeg
-- Optional: OpenAI API key (for intelligent summary features)
+- Optional: OpenAI API key (for AI summary features)
 
 ### Installation
 
@@ -73,9 +78,14 @@ After the service starts, open your browser and visit `http://localhost:8000`
 
 1. **Enter Video URL**: Paste a video link from YouTube, Bilibili, or other supported platforms
 2. **Select Summary Language**: Choose the language for the generated summary
-3. **Start Transcription**: Click the "Start" button
-4. **View Results**: Wait for processing to complete and view the transcript and intelligent summary
-5. **Download Files**: Click download buttons to save Markdown-formatted files
+3. **Start Processing**: Click the "Start" button
+4. **Monitor Progress**: Watch real-time progress through multiple stages:
+   - Video download and parsing
+   - Audio transcription with Faster-Whisper
+   - AI-powered transcript optimization (typo correction, sentence completion, intelligent paragraphing)
+   - AI summary generation in selected language
+5. **View Results**: Review the optimized transcript and intelligent summary
+6. **Download Files**: Click download buttons to save Markdown-formatted files
 
 ## 🛠️ Technical Architecture
 
@@ -115,7 +125,6 @@ AI-Video-Transcriber/
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `OPENAI_API_KEY` | OpenAI API key | - | No |
-| `OPENAI_BASE_URL` | OpenAI API base URL | - | No |
 | `HOST` | Server address | `0.0.0.0` | No |
 | `PORT` | Server port | `8000` | No |
 | `WHISPER_MODEL_SIZE` | Whisper model size | `base` | No |
@@ -136,10 +145,10 @@ AI-Video-Transcriber/
 A: Transcription speed depends on video length, Whisper model size, and hardware performance. Try using smaller models (like tiny or base) to improve speed.
 
 ### Q: Which video platforms are supported?
-A: All platforms supported by yt-dlp, including but not limited to: YouTube, Bilibili, Youku, iQiyi, Tencent Video, etc.
+A: All platforms supported by yt-dlp, including but not limited to: YouTube, TikTok, Facebook, Instagram, Twitter, Bilibili, Youku, iQiyi, Tencent Video, etc.
 
-### Q: What if the summary feature is unavailable?
-A: The summary feature requires an OpenAI API key. Without it, the system provides a simplified summary.
+### Q: What if the AI optimization features are unavailable?
+A: Both transcript optimization and summary generation require an OpenAI API key. Without it, the system provides the raw transcript from Whisper and a simplified summary.
 
 ### Q: How to handle long videos?
 A: The system can process videos of any length, but processing time will increase accordingly. For very long videos, consider using smaller Whisper models.
@@ -188,11 +197,8 @@ We welcome Issues and Pull Requests!
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) - Powerful video downloading tool
 - [Faster-Whisper](https://github.com/guillaumekln/faster-whisper) - Efficient Whisper implementation
@@ -201,14 +207,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Contact
 
-For questions or suggestions, please submit an Issue or contact the project maintainers.
-
-## 🎉 Demo
-
-Visit our [live demo](https://your-demo-url.com) to try it out!
+For questions or suggestions, please submit an Issue or contact Wendy.
 
 ## ⭐ Star History
 
 If you find this project helpful, please consider giving it a star!
-
-[![Star History Chart](https://api.star-history.com/svg?repos=your-username/AI-Video-Transcriber&type=Date)](https://star-history.com/#your-username/AI-Video-Transcriber&Date)

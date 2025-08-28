@@ -39,8 +39,8 @@
 
         .container {
             max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
+            margin: 40px auto;
+            padding: 40px;
         }
 
         .header {
@@ -64,10 +64,10 @@
 
         .form-card {
             background: var(--surface-color);
-            padding: 30px;
+            padding: 40px;
             border-radius: var(--border-radius);
             box-shadow: var(--shadow);
-            margin-bottom: 30px;
+            margin-bottom: 50px;
         }
 
         .form-group {
@@ -157,10 +157,10 @@
         .progress-section {
             display: none;
             background: var(--surface-color);
-            padding: 30px;
+            padding: 40px;
             border-radius: var(--border-radius);
             box-shadow: var(--shadow);
-            margin-bottom: 30px;
+            margin-bottom: 50px;
         }
 
         .progress-header {
@@ -198,6 +198,11 @@
 
         .results-section {
             display: none;
+            margin-top: 50px;
+            padding: 40px;
+            background: var(--surface-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
         }
 
         .results-header {
@@ -207,10 +212,23 @@
             margin-bottom: 20px;
         }
 
+        .video-title-container {
+            margin-bottom: 20px;
+        }
+        
+        .video-title {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 10px;
+            line-height: 1.3;
+        }
+        
         .results-title {
             font-size: 1.5rem;
             font-weight: 700;
             color: var(--text-color);
+            margin: 0;
         }
 
         .download-buttons {
@@ -319,8 +337,9 @@
 
         .footer {
             text-align: center;
-            margin-top: 60px;
-            padding: 30px;
+            margin-top: 80px;
+            margin-bottom: 50px;
+            padding: 40px 30px;
             color: var(--text-muted);
             border-top: 1px solid var(--border-color);
         }
@@ -328,33 +347,38 @@
         .language-switcher {
             position: absolute;
             top: 20px;
-            right: 20px;
+            right: 180px;
             z-index: 1000;
         }
 
-        .lang-btn {
+        .lang-toggle-btn {
             background: var(--surface-color);
             color: var(--text-color);
             border: 2px solid var(--border-color);
             padding: 8px 16px;
-            margin: 0 5px;
             border-radius: 20px;
             cursor: pointer;
             transition: all 0.3s ease;
             font-weight: 600;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
-        .lang-btn:hover {
+        .lang-toggle-btn:hover {
             background: var(--primary-color);
             color: white;
             border-color: var(--primary-color);
         }
 
-        .lang-btn.active {
-            background: var(--primary-color);
-            color: white;
-            border-color: var(--primary-color);
+        .lang-toggle-btn i {
+            font-size: 0.8em;
+            transition: transform 0.3s ease;
+        }
+        
+        .lang-toggle-btn:hover i {
+            transform: translateY(2px);
         }
 
         @media (max-width: 768px) {
@@ -389,11 +413,13 @@
         <!-- 头部 -->
         <div class="header">
             <div class="language-switcher">
-                <button class="lang-btn active" data-lang="en">EN</button>
-                <button class="lang-btn" data-lang="zh">中文</button>
+                <button id="langToggle" class="lang-toggle-btn">
+                    <span id="langText">English</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
             </div>
             <h1><i class="fas fa-video"></i> <span data-i18n="title">AI Video Transcriber</span></h1>
-            <p data-i18n="subtitle">Supports automatic transcription and intelligent summary for YouTube, Tiktok, Bilibili and other platforms</p>
+            <p data-i18n="subtitle">Supports automatic transcription and AI summary for YouTube, Tiktok, Bilibili and other platforms</p>
         </div>
 
         <!-- 输入表单 -->
@@ -459,7 +485,9 @@
         <!-- 结果显示 -->
         <div id="resultsSection" class="results-section">
             <div class="results-header">
-                <h2 class="results-title" data-i18n="transcription_results">Transcription Results</h2>
+                <div class="video-title-container">
+                    <h3 class="results-title" data-i18n="transcription_results">Transcription Results</h3>
+                </div>
                 <div class="download-buttons">
                     <button class="btn btn-success" id="downloadScript">
                         <i class="fas fa-download"></i> <span data-i18n="download_transcript">Download Transcript</span>
@@ -475,7 +503,7 @@
                     <i class="fas fa-file-text"></i> <span data-i18n="transcript_text">Transcript Text</span>
                 </button>
                 <button class="tab-button" data-tab="summary">
-                    <i class="fas fa-clipboard-list"></i> <span data-i18n="intelligent_summary">Intelligent Summary</span>
+                    <i class="fas fa-clipboard-list"></i> <span data-i18n="intelligent_summary">AI Summary</span>
                 </button>
             </div>
             

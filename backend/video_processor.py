@@ -24,7 +24,7 @@ class VideoProcessor:
             'no_warnings': True,
         }
     
-    async def download_and_convert(self, url: str, output_dir: Path) -> str:
+    async def download_and_convert(self, url: str, output_dir: Path) -> tuple[str, str]:
         """
         下载视频并转换为m4a格式
         
@@ -76,7 +76,7 @@ class VideoProcessor:
                     raise Exception("未找到下载的音频文件")
             
             logger.info(f"音频文件已保存: {audio_file}")
-            return audio_file
+            return audio_file, video_title
             
         except Exception as e:
             logger.error(f"下载视频失败: {str(e)}")

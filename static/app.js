@@ -8,7 +8,7 @@ class VideoTranscriber {
         this.translations = {
             en: {
                 title: "AI Video Transcriber",
-                subtitle: "Supports automatic transcription and intelligent summary for YouTube, Tiktok, Bilibili and other platforms",
+                subtitle: "Supports automatic transcription and AI summary for YouTube, Tiktok, Bilibili and other platforms",
                 video_url: "Video URL",
                 video_url_placeholder: "Enter YouTube, Tiktok, Bilibili or other platform video URLs...",
                 summary_language: "Summary Language",
@@ -19,7 +19,7 @@ class VideoTranscriber {
                 download_transcript: "Download Transcript",
                 download_summary: "Download Summary",
                 transcript_text: "Transcript Text",
-                intelligent_summary: "Intelligent Summary",
+                intelligent_summary: "AI Summary",
                 footer_text: "Powered by AI, supports multi-platform video transcription",
                 processing: "Processing...",
                 downloading_video: "Downloading video...",
@@ -104,7 +104,8 @@ class VideoTranscriber {
         this.tabContents = document.querySelectorAll('.tab-content');
         
         // 语言切换按钮
-        this.langButtons = document.querySelectorAll('.lang-btn');
+        this.langToggle = document.getElementById('langToggle');
+        this.langText = document.getElementById('langText');
     }
     
     bindEvents() {
@@ -131,10 +132,8 @@ class VideoTranscriber {
         });
         
         // 语言切换按钮
-        this.langButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                this.switchLanguage(button.dataset.lang);
-            });
+        this.langToggle.addEventListener('click', () => {
+            this.toggleLanguage();
         });
     }
     
@@ -143,13 +142,17 @@ class VideoTranscriber {
         this.switchLanguage('en');
     }
     
+    toggleLanguage() {
+        // 切换语言
+        this.currentLanguage = this.currentLanguage === 'en' ? 'zh' : 'en';
+        this.switchLanguage(this.currentLanguage);
+    }
+    
     switchLanguage(lang) {
         this.currentLanguage = lang;
         
-        // 更新语言按钮状态
-        this.langButtons.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.lang === lang);
-        });
+        // 更新语言按钮文本 - 显示当前语言
+        this.langText.textContent = lang === 'en' ? 'English' : '中文';
         
         // 更新页面文本
         this.updatePageText();
@@ -267,7 +270,7 @@ class VideoTranscriber {
                     this.stopSSE();
                     this.setLoading(false);
                     this.hideProgress();
-                    this.showResults(task.script, task.summary);
+                    this.showResults(task.script, task.summary, task.video_title);
                 } else if (task.status === 'error') {
                     console.log('[DEBUG] ❌ 任务失败:', task.error);
                     this.stopSSE();
@@ -337,7 +340,9 @@ class VideoTranscriber {
         this.progressSection.style.display = 'none';
     }
     
-    showResults(script, summary) {
+    showResults(script, summary, videoTitle = null) {
+        // 不再显示重复的标题，因为内容中已经包含标题
+        
         // 渲染markdown内容
         this.scriptContent.innerHTML = marked.parse(script || '');
         this.summaryContent.innerHTML = marked.parse(summary || '');

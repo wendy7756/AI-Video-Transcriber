@@ -20,6 +20,9 @@ class VideoProcessor:
                 'preferredcodec': 'm4a',
                 'preferredquality': '192',
             }],
+            # 写入正确的moov位置，减小时长元数据异常概率
+            'postprocessor_args': ['-movflags', '+faststart'],
+            'prefer_ffmpeg': True,
             'quiet': True,
             'no_warnings': True,
         }
@@ -57,6 +60,7 @@ class VideoProcessor:
                 # 获取视频信息（放到线程池避免阻塞事件循环）
                 info = await asyncio.to_thread(ydl.extract_info, url, False)
                 video_title = info.get('title', 'unknown')
+                expected_duration = info.get('duration') or 0
                 logger.info(f"视频标题: {video_title}")
                 
                 # 下载视频（放到线程池避免阻塞事件循环）
@@ -74,6 +78,32 @@ class VideoProcessor:
                         break
                 else:
                     raise Exception("未找到下载的音频文件")
+            
+            # 校验时长，如果和源视频差异较大，尝试一次ffmpeg规范化重封装
+            try:
+                import subprocess, shlex
+                probe_cmd = f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 {shlex.quote(audio_file)}"
+                out = subprocess.check_output(probe_cmd, shell=True).decode().strip()
+                actual_duration = float(out) if out else 0.0
+            except Exception as _:
+                actual_duration = 0.0
+            
+            if expected_duration and actual_duration and abs(actual_duration - expected_duration) / expected_duration > 0.1:
+                logger.warning(
+                    f"音频时长异常，期望{expected_duration}s，实际{actual_duration}s，尝试重封装修复…"
+                )
+                try:
+                    fixed_path = str(output_dir / f"audio_{unique_id}_fixed.m4a")
+                    fix_cmd = f"ffmpeg -y -i {shlex.quote(audio_file)} -vn -c:a aac -b:a 160k -movflags +faststart {shlex.quote(fixed_path)}"
+                    subprocess.check_call(fix_cmd, shell=True)
+                    # 用修复后的文件替换
+                    audio_file = fixed_path
+                    # 重新探测
+                    out2 = subprocess.check_output(probe_cmd.replace(shlex.quote(audio_file.rsplit('.',1)[0]+'.m4a'), shlex.quote(audio_file)), shell=True).decode().strip()
+                    actual_duration2 = float(out2) if out2 else 0.0
+                    logger.info(f"重封装完成，新时长≈{actual_duration2:.2f}s")
+                except Exception as e:
+                    logger.error(f"重封装失败：{e}")
             
             logger.info(f"音频文件已保存: {audio_file}")
             return audio_file, video_title

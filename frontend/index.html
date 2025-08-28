@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Video Transcriber</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #4a90e2;
+            --secondary-color: #7ed321;
+            --accent-color: #f39c12;
+            --danger-color: #e74c3c;
+            --background-color: #f8f9fa;
+            --surface-color: #ffffff;
+            --text-color: #2c3e50;
+            --text-muted: #6c757d;
+            --border-color: #dee2e6;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            --border-radius: 12px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 40px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 20px 0;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            margin-bottom: 0;
+        }
+
+        .form-card {
+            background: var(--surface-color);
+            padding: 40px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            margin-bottom: 50px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--text-color);
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+        }
+
+        .form-row {
+            display: flex;
+            gap: 20px;
+            align-items: end;
+        }
+
+        .form-row .form-group {
+            flex: 1;
+        }
+
+        .btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 14px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            width: auto;
+            min-width: 120px;
+            line-height: 1.2;
+            height: 48px;
+            box-sizing: border-box;
+        }
+
+        .btn:hover {
+            background: #357abd;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn:disabled {
+            background: var(--text-muted);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: var(--text-muted);
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .btn-success {
+            background: var(--secondary-color);
+        }
+
+        .btn-success:hover {
+            background: #68b919;
+        }
+
+        .progress-section {
+            display: none;
+            background: var(--surface-color);
+            padding: 40px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            margin-bottom: 50px;
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .progress-status {
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 12px;
+            background-color: var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-message {
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        .results-section {
+            display: none;
+            margin-top: 50px;
+            padding: 40px;
+            background: var(--surface-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .video-title-container {
+            margin-bottom: 20px;
+        }
+        
+        .video-title {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 10px;
+            line-height: 1.3;
+        }
+        
+        .results-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-color);
+            margin: 0;
+        }
+
+        .download-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .content-tabs {
+            display: flex;
+            border-bottom: 2px solid var(--border-color);
+            margin-bottom: 20px;
+        }
+
+        .tab-button {
+            padding: 12px 24px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-muted);
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .tab-button.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+        }
+
+        .tab-content {
+            display: none;
+            background: var(--surface-color);
+            padding: 30px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            min-height: 400px;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .markdown-content {
+            line-height: 1.8;
+        }
+
+        .markdown-content h1,
+        .markdown-content h2,
+        .markdown-content h3 {
+            margin-top: 24px;
+            margin-bottom: 16px;
+            color: var(--text-color);
+        }
+
+        .markdown-content h1 {
+            font-size: 2rem;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 8px;
+        }
+
+        .markdown-content h2 {
+            font-size: 1.5rem;
+        }
+
+        .markdown-content p {
+            margin-bottom: 16px;
+        }
+
+        .markdown-content strong {
+            color: var(--primary-color);
+        }
+
+        .alert {
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid;
+        }
+
+        .alert-error {
+            background-color: #f8d7da;
+            border-color: var(--danger-color);
+            color: #721c24;
+        }
+
+        .alert-success {
+            background-color: #d4edda;
+            border-color: var(--secondary-color);
+            color: #155724;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 80px;
+            margin-bottom: 50px;
+            padding: 40px 30px;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border-color);
+        }
+
+        .language-switcher {
+            position: absolute;
+            top: 20px;
+            right: 180px;
+            z-index: 1000;
+        }
+
+        .lang-toggle-btn {
+            background: var(--surface-color);
+            color: var(--text-color);
+            border: 2px solid var(--border-color);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .lang-toggle-btn:hover {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        .lang-toggle-btn i {
+            font-size: 0.8em;
+            transition: transform 0.3s ease;
+        }
+        
+        .lang-toggle-btn:hover i {
+            transform: translateY(2px);
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                flex-direction: column;
+            }
+            
+            .results-header {
+                flex-direction: column;
+                gap: 15px;
+                align-items: stretch;
+            }
+            
+            .download-buttons {
+                justify-content: center;
+            }
+            
+            .content-tabs {
+                overflow-x: auto;
+            }
+
+            .language-switcher {
+                position: static;
+                text-align: center;
+                margin-bottom: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <div class="header">
+            <div class="language-switcher">
+                <button id="langToggle" class="lang-toggle-btn">
+                    <span id="langText">English</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+            </div>
+            <h1><i class="fas fa-video"></i> <span data-i18n="title">AI Video Transcriber</span></h1>
+            <p data-i18n="subtitle">Supports automatic transcription and AI summary for YouTube, Tiktok, Bilibili and other platforms</p>
+        </div>
+
+        <!-- 输入表单 -->
+        <div class="form-card">
+            <form id="videoForm">
+                <div class="form-group">
+                    <label for="videoUrl">
+                        <i class="fas fa-link"></i> <span data-i18n="video_url">Video URL</span>
+                    </label>
+                    <input type="url" id="videoUrl" class="form-control" 
+                           data-i18n-placeholder="video_url_placeholder"
+                           placeholder="Enter YouTube, Tiktok, Bilibili or other platform video URLs..."
+                           required>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="summaryLanguage">
+                            <i class="fas fa-language"></i> <span data-i18n="summary_language">Summary Language</span>
+                        </label>
+                        <select id="summaryLanguage" class="form-control">
+                            <option value="en">English</option>
+                            <option value="zh">中文（简体）</option>
+                            <option value="es">Español</option>
+                            <option value="fr">Français</option>
+                            <option value="de">Deutsch</option>
+                            <option value="it">Italiano</option>
+                            <option value="pt">Português</option>
+                            <option value="ru">Русский</option>
+                            <option value="ja">日本語</option>
+                            <option value="ko">한국어</option>
+                            <option value="ar">العربية</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <button type="submit" class="btn" id="submitBtn">
+                            <i class="fas fa-play"></i> <span data-i18n="start_transcription">Start</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- 进度显示 -->
+        <div id="progressSection" class="progress-section">
+            <div class="progress-header">
+                <h3 data-i18n="processing_progress">Processing Progress</h3>
+                <span class="progress-status" id="progressStatus">0%</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-message" id="progressMessage" data-i18n="preparing">Preparing...</div>
+        </div>
+
+        <!-- 错误提示 -->
+        <div id="errorAlert" class="alert alert-error" style="display: none;">
+            <i class="fas fa-exclamation-triangle"></i>
+            <span id="errorMessage"></span>
+        </div>
+
+        <!-- 结果显示 -->
+        <div id="resultsSection" class="results-section">
+            <div class="results-header">
+                <div class="video-title-container">
+                    <h3 class="results-title" data-i18n="transcription_results">Transcription Results</h3>
+                </div>
+                <div class="download-buttons">
+                    <button class="btn btn-success" id="downloadScript">
+                        <i class="fas fa-download"></i> <span data-i18n="download_transcript">Download Transcript</span>
+                    </button>
+                    <button class="btn btn-success" id="downloadSummary">
+                        <i class="fas fa-download"></i> <span data-i18n="download_summary">Download Summary</span>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="content-tabs">
+                <button class="tab-button active" data-tab="script">
+                    <i class="fas fa-file-text"></i> <span data-i18n="transcript_text">Transcript Text</span>
+                </button>
+                <button class="tab-button" data-tab="summary">
+                    <i class="fas fa-clipboard-list"></i> <span data-i18n="intelligent_summary">AI Summary</span>
+                </button>
+            </div>
+            
+            <div id="scriptTab" class="tab-content active">
+                <div class="markdown-content" id="scriptContent"></div>
+            </div>
+            
+            <div id="summaryTab" class="tab-content">
+                <div class="markdown-content" id="summaryContent"></div>
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <div class="footer">
+            <p><i class="fas fa-heart" style="color: #e74c3c;"></i> <span data-i18n="footer_text">Powered by AI, supports multi-platform video transcription</span></p>
+        </div>
+    </div>
+
+    <script src="/static/app.js?v=20250828"></script>
+</body>
+</html>

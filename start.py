@@ -58,7 +58,9 @@ def setup_environment():
     """设置环境变量"""
     # 设置OpenAI配置
     if not os.getenv("OPENAI_API_KEY"):
-        os.environ["OPENAI_API_KEY"] = "sk-IOYS1zAFnSxg3tYCK7PhHUFoh98yf2WlIp0979vw911Oisen"
+        print("⚠️  警告: 未设置OPENAI_API_KEY环境变量")
+        print("请设置环境变量: export OPENAI_API_KEY=your_api_key_here")
+        return False
         print("✅ 已设置OpenAI API Key")
     
     if not os.getenv("OPENAI_BASE_URL"):

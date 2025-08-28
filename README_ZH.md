@@ -6,6 +6,8 @@
 
 一个AI视频转录和摘要工具，支持YouTube、Tiktok、Bilibili等多个社媒平台。
 
+![Interface](cn-video.png)
+
 </div>
 
 ## ✨ 功能特性

@@ -4,9 +4,11 @@
 
 English | [中文](README_ZH.md)
 
-
 An AI-powered video transcription and summarization tool that supports multiple video platforms including YouTube, Tiktok, Bilibili, and more.
-</div">
+
+![Interface](en-video.png)
+
+</div>
 
 ## ✨ Features
 

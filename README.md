@@ -4,7 +4,7 @@
 
 English | [中文](README_ZH.md)
 
-An AI-powered video transcription and summarization tool that supports multiple video platforms including YouTube, Tiktok, Bilibili, and more.
+An AI-powered video transcription and summarization tool that supports multiple video platforms including YouTube, Tiktok, Bilibili, and 30+ platforms.
 
 ![Interface](en-video.png)
 
@@ -12,7 +12,7 @@ An AI-powered video transcription and summarization tool that supports multiple 
 
 ## ✨ Features
 
-- 🎥 **Multi-Platform Support**: Works with YouTube, Tiktok, Bilibili, and more
+- 🎥 **Multi-Platform Support**: Works with YouTube, Tiktok, Bilibili, and 30+ more
 - 🗣️ **Intelligent Transcription**: High-accuracy speech-to-text using Faster-Whisper
 - 🤖 **AI Text Optimization**: Automatic typo correction, sentence completion, and intelligent paragraphing
 - 🌍 **Multi-Language Summaries**: Generate intelligent summaries in multiple languages

@@ -400,29 +400,41 @@ class Summarizer:
     async def _final_paragraph_organization(self, text: str, lang_instruction: str) -> str:
         """
         对合并后的文本进行最终的段落整理
+        使用改进的prompt和工程验证
         """
         try:
-            system_prompt = f"""你是段落整理专家。请对已经过基础优化的{lang_instruction}文本进行段落重新组织。
+            # 估算文本长度，如果太长则分块处理
+            estimated_tokens = self._estimate_tokens(text)
+            if estimated_tokens > 15000:  # 对于很长的文本，分块处理
+                return await self._organize_long_text_paragraphs(text, lang_instruction)
+            
+            system_prompt = f"""你是专业的{lang_instruction}文本段落整理专家。你的任务是按照语义和逻辑重新组织段落。
 
-要求：
-1. **严格保持原始语言({lang_instruction})**
-2. **不改变任何实际内容**，只调整段落结构
-3. **按话题和逻辑重新分段**
-4. **合并过短的段落**，拆分过长的段落
-5. **确保段落间逻辑连贯**
-6. **段落间用空行分隔**
+🎯 **核心原则**：
+1. **严格保持原始语言({lang_instruction})**，绝不翻译
+2. **保持所有内容完整**，不删除不添加任何信息
+3. **按语义逻辑分段**：每段围绕一个完整的思想或话题
+4. **严格控制段落长度**：每段绝不超过250词
+5. **保持自然流畅**：段落间应有逻辑连接
 
-段落标准：
-- 每段3-6个句子
-- 每段一个主要话题
-- 段落长度适中（不超过250词）
-- 段落间有逻辑过渡"""
+📏 **分段标准**：
+- **语义完整性**：每段讲述一个完整概念或事件
+- **适中长度**：3-7个句子，每段绝不超过250词
+- **逻辑边界**：在话题转换、时间转换、观点转换处分段
+- **自然断点**：遵循说话者的自然停顿和逻辑
 
-            user_prompt = f"""重新组织以下{lang_instruction}文本的段落结构：
+⚠️ **严禁**：
+- 创造超过250词的巨型段落
+- 强行合并不相关的内容
+- 打断完整的故事或论述
+
+输出格式：段落间用空行分隔。"""
+
+            user_prompt = f"""请重新整理以下{lang_instruction}文本的段落结构。严格按照语义和逻辑进行分段，确保每段不超过200词：
 
 {text}
 
-输出重新分段后的文本，保持内容不变。"""
+重新分段后的文本："""
 
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
@@ -430,16 +442,176 @@ class Summarizer:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=3000,
-                temperature=0.1
+                max_tokens=4000,  # 增加token限制
+                temperature=0.05  # 降低温度，提高一致性
             )
             
-            return response.choices[0].message.content
+            organized_text = response.choices[0].message.content
+            
+            # 工程验证：检查段落长度
+            validated_text = self._validate_paragraph_lengths(organized_text)
+            
+            return validated_text
             
         except Exception as e:
             logger.error(f"最终段落整理失败: {e}")
-            # 失败时返回合并的原文
-            return text
+            # 失败时使用基础分段处理
+            return self._basic_paragraph_fallback(text)
+
+    async def _organize_long_text_paragraphs(self, text: str, lang_instruction: str) -> str:
+        """
+        对于很长的文本，分块进行段落整理
+        """
+        try:
+            # 按现有段落分割
+            paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+            organized_chunks = []
+            
+            current_chunk = []
+            current_tokens = 0
+            max_chunk_tokens = 12000  # 保守的chunk大小
+            
+            for para in paragraphs:
+                para_tokens = self._estimate_tokens(para)
+                
+                if current_tokens + para_tokens > max_chunk_tokens and current_chunk:
+                    # 处理当前chunk
+                    chunk_text = '\n\n'.join(current_chunk)
+                    organized_chunk = await self._organize_single_chunk(chunk_text, lang_instruction)
+                    organized_chunks.append(organized_chunk)
+                    
+                    current_chunk = [para]
+                    current_tokens = para_tokens
+                else:
+                    current_chunk.append(para)
+                    current_tokens += para_tokens
+            
+            # 处理最后一个chunk
+            if current_chunk:
+                chunk_text = '\n\n'.join(current_chunk)
+                organized_chunk = await self._organize_single_chunk(chunk_text, lang_instruction)
+                organized_chunks.append(organized_chunk)
+            
+            return '\n\n'.join(organized_chunks)
+            
+        except Exception as e:
+            logger.error(f"长文本段落整理失败: {e}")
+            return self._basic_paragraph_fallback(text)
+
+    async def _organize_single_chunk(self, text: str, lang_instruction: str) -> str:
+        """
+        整理单个文本块的段落
+        """
+        system_prompt = f"""你是{lang_instruction}段落整理专家。按语义重新组织段落，确保每段不超过200词。
+
+核心要求：
+1. 严格保持{lang_instruction}原语言
+2. 按语义逻辑分段，每段一个主题
+3. 每段绝不超过250词
+4. 段落间空行分隔
+5. 保持内容完整，不删减信息"""
+
+        user_prompt = f"""重新分段以下文本，确保每段不超过200词：
+
+{text}"""
+
+        response = self.client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            max_tokens=3000,
+            temperature=0.05
+        )
+        
+        return response.choices[0].message.content
+
+    def _validate_paragraph_lengths(self, text: str) -> str:
+        """
+        验证段落长度，如果有超长段落则尝试分割
+        """
+        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+        validated_paragraphs = []
+        
+        for para in paragraphs:
+            word_count = len(para.split())
+            
+            if word_count > 300:  # 如果段落超过300词
+                logger.warning(f"检测到超长段落({word_count}词)，尝试分割")
+                # 尝试按句子分割长段落
+                split_paras = self._split_long_paragraph(para)
+                validated_paragraphs.extend(split_paras)
+            else:
+                validated_paragraphs.append(para)
+        
+        return '\n\n'.join(validated_paragraphs)
+
+    def _split_long_paragraph(self, paragraph: str) -> list:
+        """
+        分割过长的段落
+        """
+        import re
+        
+        # 按句子分割
+        sentences = re.split(r'[.!?。！？]\s+', paragraph)
+        sentences = [s.strip() + '.' for s in sentences if s.strip()]
+        
+        split_paragraphs = []
+        current_para = []
+        current_words = 0
+        
+        for sentence in sentences:
+            sentence_words = len(sentence.split())
+            
+            if current_words + sentence_words > 200 and current_para:
+                # 当前段落达到长度限制
+                split_paragraphs.append(' '.join(current_para))
+                current_para = [sentence]
+                current_words = sentence_words
+            else:
+                current_para.append(sentence)
+                current_words += sentence_words
+        
+        # 添加最后一段
+        if current_para:
+            split_paragraphs.append(' '.join(current_para))
+        
+        return split_paragraphs
+
+    def _basic_paragraph_fallback(self, text: str) -> str:
+        """
+        基础分段fallback机制
+        当GPT整理失败时，使用简单的规则分段
+        """
+        import re
+        
+        # 移除多余的空行
+        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+        
+        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+        basic_paragraphs = []
+        
+        for para in paragraphs:
+            word_count = len(para.split())
+            
+            if word_count > 250:
+                # 长段落按句子分割
+                split_paras = self._split_long_paragraph(para)
+                basic_paragraphs.extend(split_paras)
+            elif word_count < 30 and basic_paragraphs:
+                # 短段落与上一段合并（如果合并后不超过200词）
+                last_para = basic_paragraphs[-1]
+                combined_words = len(last_para.split()) + word_count
+                
+                if combined_words <= 200:
+                    basic_paragraphs[-1] = last_para + ' ' + para
+                else:
+                    basic_paragraphs.append(para)
+            else:
+                basic_paragraphs.append(para)
+        
+        return '\n\n'.join(basic_paragraphs)
 
     async def summarize(self, transcript: str, target_language: str = "zh", video_title: str = None) -> str:
         """
@@ -514,7 +686,7 @@ class Summarizer:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=2000,
+            max_tokens=3000,
             temperature=0.3
         )
         
@@ -648,12 +820,13 @@ class Summarizer:
         
         return summary_with_meta
     
-    def _generate_fallback_summary(self, transcript: str, target_language: str) -> str:
+    def _generate_fallback_summary(self, transcript: str, target_language: str, video_title: str = None) -> str:
         """
         生成备用摘要（当OpenAI API不可用时）
         
         Args:
             transcript: 转录文本
+            video_title: 视频标题
             target_language: 目标语言代码
             
         Returns:

@@ -11,20 +11,18 @@ class VideoProcessor:
     
     def __init__(self):
         self.ydl_opts = {
-            'format': 'bestaudio/best',
+            'format': 'bestaudio/best',  # 优先下载最佳音频源
             'outtmpl': '%(title)s.%(ext)s',
-            'extractaudio': True,
-            'audioformat': 'm4a',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'm4a',
-                'preferredquality': '192',
+                'preferredquality': '192'
             }],
-            # 写入正确的moov位置，减小时长元数据异常概率
-            'postprocessor_args': ['-movflags', '+faststart'],
+            'postprocessor_args': ['-movflags', '+faststart'],  # 全局FFmpeg参数
             'prefer_ffmpeg': True,
             'quiet': True,
             'no_warnings': True,
+            'noplaylist': True,  # 强制只下载单个视频，不下载播放列表
         }
     
     async def download_and_convert(self, url: str, output_dir: Path) -> tuple[str, str]:

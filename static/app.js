@@ -5,6 +5,18 @@ class VideoTranscriber {
         this.apiBase = 'http://localhost:8000/api';
         this.currentLanguage = 'en'; // 默认英文
         
+        // 智能进度模拟相关
+        this.smartProgress = {
+            enabled: false,
+            current: 0,           // 当前显示的进度
+            target: 0,            // 目标进度
+            lastServerUpdate: 0,  // 最后一次服务器更新的进度
+            interval: null,       // 定时器
+            estimatedDuration: 0, // 预估总时长（秒）
+            startTime: null,      // 任务开始时间
+            stage: 'preparing'    // 当前阶段
+        };
+        
         this.translations = {
             en: {
                 title: "AI Video Transcriber",
@@ -223,8 +235,9 @@ class VideoTranscriber {
             
             console.log('[DEBUG] ✅ 任务已创建，Task ID:', this.currentTaskId);
             
-            // 立即更新一次进度显示
-            this.updateProgress(5, this.t('preparing'));
+            // 启动智能进度模拟
+            this.initializeSmartProgress();
+            this.updateProgress(5, this.t('preparing'), true);
             
             // 使用SSE实时接收状态更新
             this.startSSE();
@@ -261,18 +274,20 @@ class VideoTranscriber {
                     message: task.message
                 });
                 
-                // 更新进度
+                // 更新进度 (标记为服务器推送)
                 console.log('[DEBUG] 📈 更新进度条:', `${task.progress}% - ${task.message}`);
-                this.updateProgress(task.progress, task.message);
+                this.updateProgress(task.progress, task.message, true);
                 
                 if (task.status === 'completed') {
                     console.log('[DEBUG] ✅ 任务完成，显示结果');
+                    this.stopSmartProgress(); // 停止智能进度模拟
                     this.stopSSE();
                     this.setLoading(false);
                     this.hideProgress();
                     this.showResults(task.script, task.summary, task.video_title);
                 } else if (task.status === 'error') {
                     console.log('[DEBUG] ❌ 任务失败:', task.error);
+                    this.stopSmartProgress(); // 停止智能进度模拟
                     this.stopSSE();
                     this.setLoading(false);
                     this.hideProgress();
@@ -305,10 +320,180 @@ class VideoTranscriber {
     
 
     
-    updateProgress(progress, message) {
-        console.log('[DEBUG] 🎯 updateProgress调用:', { progress, message });
-        this.progressStatus.textContent = `${progress}%`;
-        this.progressFill.style.width = `${progress}%`;
+    updateProgress(progress, message, fromServer = false) {
+        console.log('[DEBUG] 🎯 updateProgress调用:', { progress, message, fromServer });
+        
+        if (fromServer) {
+            // 服务器推送的真实进度
+            this.handleServerProgress(progress, message);
+        } else {
+            // 本地模拟进度
+            this.updateProgressDisplay(progress, message);
+        }
+    }
+    
+    handleServerProgress(serverProgress, message) {
+        console.log('[DEBUG] 📡 处理服务器进度:', serverProgress);
+        
+        // 停止当前的模拟进度
+        this.stopSmartProgress();
+        
+        // 更新服务器进度记录
+        this.smartProgress.lastServerUpdate = serverProgress;
+        this.smartProgress.current = serverProgress;
+        
+        // 立即显示服务器进度
+        this.updateProgressDisplay(serverProgress, message);
+        
+        // 确定当前处理阶段和预估目标
+        this.updateProgressStage(serverProgress, message);
+        
+        // 重新启动智能进度模拟
+        this.startSmartProgress();
+    }
+    
+    updateProgressStage(progress, message) {
+        // 根据进度和消息确定处理阶段
+        if (message.includes('解析') || message.includes('parsing')) {
+            this.smartProgress.stage = 'parsing';
+            this.smartProgress.target = 25;
+        } else if (message.includes('下载') || message.includes('downloading')) {
+            this.smartProgress.stage = 'downloading';
+            this.smartProgress.target = 60;
+        } else if (message.includes('转录') || message.includes('transcrib')) {
+            this.smartProgress.stage = 'transcribing';
+            this.smartProgress.target = 80;
+        } else if (message.includes('优化') || message.includes('optimiz')) {
+            this.smartProgress.stage = 'optimizing';
+            this.smartProgress.target = 90;
+        } else if (message.includes('摘要') || message.includes('summary')) {
+            this.smartProgress.stage = 'summarizing';
+            this.smartProgress.target = 95;
+        } else if (message.includes('完成') || message.includes('completed')) {
+            this.smartProgress.stage = 'completed';
+            this.smartProgress.target = 100;
+        }
+        
+        // 如果当前进度超过预设目标，调整目标
+        if (progress >= this.smartProgress.target) {
+            this.smartProgress.target = Math.min(progress + 10, 100);
+        }
+        
+        console.log('[DEBUG] 🎯 阶段更新:', {
+            stage: this.smartProgress.stage,
+            target: this.smartProgress.target,
+            current: progress
+        });
+    }
+    
+    initializeSmartProgress() {
+        // 初始化智能进度状态
+        this.smartProgress.enabled = false;
+        this.smartProgress.current = 0;
+        this.smartProgress.target = 15;
+        this.smartProgress.lastServerUpdate = 0;
+        this.smartProgress.startTime = Date.now();
+        this.smartProgress.stage = 'preparing';
+        
+        console.log('[DEBUG] 🔧 智能进度模拟已初始化');
+    }
+    
+    startSmartProgress() {
+        // 启动智能进度模拟
+        if (this.smartProgress.interval) {
+            clearInterval(this.smartProgress.interval);
+        }
+        
+        this.smartProgress.enabled = true;
+        this.smartProgress.startTime = this.smartProgress.startTime || Date.now();
+        
+        // 每500ms更新一次模拟进度
+        this.smartProgress.interval = setInterval(() => {
+            this.simulateProgress();
+        }, 500);
+        
+        console.log('[DEBUG] 🚀 智能进度模拟已启动');
+    }
+    
+    stopSmartProgress() {
+        if (this.smartProgress.interval) {
+            clearInterval(this.smartProgress.interval);
+            this.smartProgress.interval = null;
+        }
+        this.smartProgress.enabled = false;
+        console.log('[DEBUG] ⏹️ 智能进度模拟已停止');
+    }
+    
+    simulateProgress() {
+        if (!this.smartProgress.enabled) return;
+        
+        const current = this.smartProgress.current;
+        const target = this.smartProgress.target;
+        
+        // 如果已经达到目标，暂停模拟
+        if (current >= target) return;
+        
+        // 计算进度增量（基于阶段的不同速度）
+        let increment = this.calculateProgressIncrement();
+        
+        // 确保不超过目标进度
+        const newProgress = Math.min(current + increment, target);
+        
+        if (newProgress > current) {
+            this.smartProgress.current = newProgress;
+            this.updateProgressDisplay(newProgress, this.getCurrentStageMessage());
+        }
+    }
+    
+    calculateProgressIncrement() {
+        const elapsedTime = (Date.now() - this.smartProgress.startTime) / 1000; // 秒
+        
+        // 基于不同阶段的预估速度
+        const stageConfig = {
+            'parsing': { speed: 0.3, maxTime: 30 },      // 解析阶段：30秒内到25%
+            'downloading': { speed: 0.2, maxTime: 120 }, // 下载阶段：2分钟内到60%
+            'transcribing': { speed: 0.15, maxTime: 180 }, // 转录阶段：3分钟内到80%
+            'optimizing': { speed: 0.25, maxTime: 60 },  // 优化阶段：1分钟内到90%
+            'summarizing': { speed: 0.3, maxTime: 30 }   // 摘要阶段：30秒内到95%
+        };
+        
+        const config = stageConfig[this.smartProgress.stage] || { speed: 0.2, maxTime: 60 };
+        
+        // 基础增量：每500ms增加的百分比
+        let baseIncrement = config.speed;
+        
+        // 时间因子：如果时间过长，加快进度
+        if (elapsedTime > config.maxTime) {
+            baseIncrement *= 1.5;
+        }
+        
+        // 距离因子：距离目标越近，速度越慢
+        const remaining = this.smartProgress.target - this.smartProgress.current;
+        if (remaining < 5) {
+            baseIncrement *= 0.3; // 接近目标时放慢
+        }
+        
+        return baseIncrement;
+    }
+    
+    getCurrentStageMessage() {
+        const stageMessages = {
+            'parsing': this.t('parsing_video'),
+            'downloading': this.t('downloading_video'),
+            'transcribing': this.t('transcribing_audio'),
+            'optimizing': this.t('optimizing_transcript'),
+            'summarizing': this.t('generating_summary'),
+            'completed': this.t('completed')
+        };
+        
+        return stageMessages[this.smartProgress.stage] || this.t('processing');
+    }
+    
+    updateProgressDisplay(progress, message) {
+        // 实际更新UI显示
+        const roundedProgress = Math.round(progress * 10) / 10; // 保留1位小数
+        this.progressStatus.textContent = `${roundedProgress}%`;
+        this.progressFill.style.width = `${roundedProgress}%`;
         console.log('[DEBUG] 📏 进度条已更新:', this.progressFill.style.width);
         
         // 翻译常见的进度消息
@@ -341,8 +526,7 @@ class VideoTranscriber {
     }
     
     showResults(script, summary, videoTitle = null) {
-        // 不再显示重复的标题，因为内容中已经包含标题
-        
+
         // 渲染markdown内容
         this.scriptContent.innerHTML = marked.parse(script || '');
         this.summaryContent.innerHTML = marked.parse(summary || '');

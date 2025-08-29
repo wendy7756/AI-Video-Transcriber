@@ -4,7 +4,7 @@
 
 中文 | [English](README.md)
 
-一个AI视频转录和摘要工具，支持YouTube、Tiktok、Bilibili等多个社媒平台。
+免费AI视频转录和摘要工具，支持YouTube、Bilibili、抖音等30+平台。
 
 ![Interface](cn-video.png)
 
@@ -12,7 +12,7 @@
 
 ## ✨ 功能特性
 
-- 🎥 **多平台支持**: 支持YouTube、Tiktok、Bilibili等多个社媒平台。
+- 🎥 **多平台支持**: 支持YouTube、Bilibili、抖音等30+平台。
 - 🗣️ **智能转录**: 使用Faster-Whisper模型进行高精度语音转文字
 - 🤖 **AI文本优化**: 自动错别字修正、句子完整化和智能分段
 - 🌍 **多语言摘要**: 支持多种语言的智能摘要生成

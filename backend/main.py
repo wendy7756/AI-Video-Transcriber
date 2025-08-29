@@ -8,6 +8,7 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Optional
+import aiofiles
 import uuid
 import json
 
@@ -194,6 +195,22 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         
         # 转录音频
         raw_script = await transcriber.transcribe(audio_path)
+
+        # 将Whisper原始转录保存为Markdown文件，供下载/归档
+        try:
+            raw_md_filename = f"transcript_raw_{task_id}.md"
+            raw_md_path = TEMP_DIR / raw_md_filename
+            with open(raw_md_path, "w", encoding="utf-8") as f:
+                f.write(raw_script or "")
+
+            # 记录原始转录文件路径（仅保存文件名，实际路径位于TEMP_DIR）
+            tasks[task_id].update({
+                "raw_script_file": raw_md_filename
+            })
+            save_tasks(tasks)
+            await broadcast_task_update(task_id, tasks[task_id])
+        except Exception as e:
+            logger.error(f"保存原始转录Markdown失败: {e}")
         
         # 更新状态：优化转录文本
         tasks[task_id].update({
@@ -220,6 +237,18 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         # 生成摘要
         summary = await summarizer.summarize(script, summary_language, video_title)
         
+        # 保存优化后的转录文本到文件
+        script_filename = f"transcript_{task_id}.md"
+        script_path = TEMP_DIR / script_filename
+        async with aiofiles.open(script_path, "w", encoding="utf-8") as f:
+            await f.write(script_with_title)
+        
+        # 保存摘要到文件
+        summary_filename = f"summary_{task_id}.md"
+        summary_path = TEMP_DIR / summary_filename
+        async with aiofiles.open(summary_path, "w", encoding="utf-8") as f:
+            await f.write(summary)
+        
         # 更新状态：完成
         tasks[task_id].update({
             "status": "completed",
@@ -227,7 +256,9 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
             "message": "处理完成！",
             "video_title": video_title,
             "script": script_with_title,
-            "summary": summary
+            "summary": summary,
+            "script_path": str(script_path),
+            "summary_path": str(summary_path)
         })
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
@@ -343,14 +374,46 @@ async def download_file(task_id: str, file_type: str):
         raise HTTPException(status_code=400, detail="任务尚未完成")
     
     if file_type == "script":
-        content = task["script"]
-        filename = f"transcript_{task_id}.md"
+        # 优先使用已保存的文件，fallback到内存内容
+        script_path = task.get("script_path")
+        if script_path and Path(script_path).exists():
+            return FileResponse(
+                script_path,
+                filename=f"transcript_{task_id}.md",
+                media_type="text/markdown"
+            )
+        else:
+            # Fallback: 从内存创建临时文件
+            content = task["script"]
+            filename = f"transcript_{task_id}.md"
     elif file_type == "summary":
-        content = task["summary"]
-        filename = f"summary_{task_id}.md"
+        # 优先使用已保存的文件，fallback到内存内容
+        summary_path = task.get("summary_path")
+        if summary_path and Path(summary_path).exists():
+            return FileResponse(
+                summary_path,
+                filename=f"summary_{task_id}.md",
+                media_type="text/markdown"
+            )
+        else:
+            # Fallback: 从内存创建临时文件
+            content = task["summary"]
+            filename = f"summary_{task_id}.md"
+    elif file_type == "raw_script":
+        # 原始Whisper转录直接从已保存的Markdown文件返回
+        raw_name = task.get("raw_script_file", f"transcript_raw_{task_id}.md")
+        raw_path = TEMP_DIR / raw_name
+        if not raw_path.exists():
+            raise HTTPException(status_code=404, detail="原始转录文件不存在")
+        return FileResponse(
+            raw_path,
+            filename=raw_name,
+            media_type="text/markdown"
+        )
     else:
         raise HTTPException(status_code=400, detail="无效的文件类型")
     
+    # 如果到这里，说明需要从内存创建临时文件（fallback情况）
     if not content:
         raise HTTPException(status_code=404, detail="文件不存在")
     

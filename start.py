@@ -75,7 +75,14 @@ def setup_environment():
 
 def main():
     """主函数"""
+    # 检查是否使用生产模式（禁用热重载）
+    production_mode = "--prod" in sys.argv or os.getenv("PRODUCTION_MODE") == "true"
+    
     print("🚀 AI视频转录器启动检查")
+    if production_mode:
+        print("🔒 生产模式 - 热重载已禁用")
+    else:
+        print("🔧 开发模式 - 热重载已启用")
     print("=" * 50)
     
     # 检查依赖
@@ -109,9 +116,12 @@ def main():
         cmd = [
             sys.executable, "-m", "uvicorn", "main:app",
             "--host", host,
-            "--port", str(port),
-            "--reload"
+            "--port", str(port)
         ]
+        
+        # 只在开发模式下启用热重载
+        if not production_mode:
+            cmd.append("--reload")
         
         subprocess.run(cmd)
         

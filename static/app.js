@@ -29,8 +29,10 @@ class VideoTranscriber {
                 preparing: "Preparing...",
                 transcription_results: "Transcription Results",
                 download_transcript: "Download Transcript",
+                download_translation: "Download Translation",
                 download_summary: "Download Summary",
                 transcript_text: "Transcript Text",
+                translation: "Translation",
                 intelligent_summary: "AI Summary",
                 footer_text: "Powered by AI, supports multi-platform video transcription",
                 processing: "Processing...",
@@ -60,8 +62,10 @@ class VideoTranscriber {
                 preparing: "准备中...",
                 transcription_results: "转录结果",
                 download_transcript: "下载转录",
+                download_translation: "下载翻译",
                 download_summary: "下载摘要",
                 transcript_text: "转录文本",
+                translation: "翻译",
                 intelligent_summary: "智能摘要",
                 footer_text: "由AI驱动，支持多平台视频转录",
                 processing: "处理中...",
@@ -107,9 +111,12 @@ class VideoTranscriber {
         // 结果元素
         this.resultsSection = document.getElementById('resultsSection');
         this.scriptContent = document.getElementById('scriptContent');
+        this.translationContent = document.getElementById('translationContent');
         this.summaryContent = document.getElementById('summaryContent');
         this.downloadScriptBtn = document.getElementById('downloadScript');
+        this.downloadTranslationBtn = document.getElementById('downloadTranslation');
         this.downloadSummaryBtn = document.getElementById('downloadSummary');
+        this.translationTabBtn = document.getElementById('translationTabBtn');
         
         // 标签页
         this.tabButtons = document.querySelectorAll('.tab-button');
@@ -135,13 +142,23 @@ class VideoTranscriber {
         });
         
         // 下载按钮
-        this.downloadScriptBtn.addEventListener('click', () => {
-            this.downloadFile('script');
-        });
+        if (this.downloadScriptBtn) {
+            this.downloadScriptBtn.addEventListener('click', () => {
+                this.downloadFile('script');
+            });
+        }
         
-        this.downloadSummaryBtn.addEventListener('click', () => {
-            this.downloadFile('summary');
-        });
+        if (this.downloadTranslationBtn) {
+            this.downloadTranslationBtn.addEventListener('click', () => {
+                this.downloadFile('translation');
+            });
+        }
+        
+        if (this.downloadSummaryBtn) {
+            this.downloadSummaryBtn.addEventListener('click', () => {
+                this.downloadFile('summary');
+            });
+        }
         
         // 语言切换按钮
         this.langToggle.addEventListener('click', () => {
@@ -284,7 +301,7 @@ class VideoTranscriber {
                     this.stopSSE();
                     this.setLoading(false);
                     this.hideProgress();
-                    this.showResults(task.script, task.summary, task.video_title);
+                    this.showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language);
                 } else if (task.status === 'error') {
                     console.log('[DEBUG] ❌ 任务失败:', task.error);
                     this.stopSmartProgress(); // 停止智能进度模拟
@@ -298,9 +315,31 @@ class VideoTranscriber {
             }
         };
         
-        this.eventSource.onerror = (error) => {
+        this.eventSource.onerror = async (error) => {
             console.error('[DEBUG] SSE连接错误:', error);
             this.stopSSE();
+
+            // 兜底：查询任务最终状态，若已完成则直接渲染结果
+            try {
+                if (this.currentTaskId) {
+                    const resp = await fetch(`${this.apiBase}/task-status/${this.currentTaskId}`);
+                    if (resp.ok) {
+                        const task = await resp.json();
+                        if (task && task.status === 'completed') {
+                            console.log('[DEBUG] 🔁 SSE断开，但任务已完成，直接渲染结果');
+                            this.stopSmartProgress();
+                            this.setLoading(false);
+                            this.hideProgress();
+                            this.showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language);
+                            return;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('[DEBUG] 兜底查询任务状态失败:', e);
+            }
+
+            // 未完成则提示并保持页面状态（可由用户重试或自动重连）
             this.showError(this.t('error_processing_failed') + 'SSE连接断开');
             this.setLoading(false);
         };
@@ -525,11 +564,70 @@ class VideoTranscriber {
         this.progressSection.style.display = 'none';
     }
     
-    showResults(script, summary, videoTitle = null) {
+    showResults(script, summary, videoTitle = null, translation = null, detectedLanguage = null, summaryLanguage = null) {
 
-        // 渲染markdown内容
-        this.scriptContent.innerHTML = marked.parse(script || '');
-        this.summaryContent.innerHTML = marked.parse(summary || '');
+        // 调试日志：检查翻译相关参数
+        console.log('[DEBUG] 🔍 showResults参数:', {
+            hasTranslation: !!translation,
+            translationLength: translation ? translation.length : 0,
+            detectedLanguage,
+            summaryLanguage,
+            languagesDifferent: detectedLanguage !== summaryLanguage
+        });
+
+        // 渲染markdown内容，确保参数不为null
+        const safeScript = script || '';
+        const safeSummary = summary || '';
+        const safeTranslation = translation || '';
+        
+        this.scriptContent.innerHTML = safeScript ? marked.parse(safeScript) : '';
+        this.summaryContent.innerHTML = safeSummary ? marked.parse(safeSummary) : '';
+        
+        // 处理翻译
+        const shouldShowTranslation = safeTranslation && detectedLanguage && summaryLanguage && detectedLanguage !== summaryLanguage;
+        
+        console.log('[DEBUG] 🌐 翻译显示判断:', {
+            safeTranslation: !!safeTranslation,
+            detectedLanguage: detectedLanguage,
+            summaryLanguage: summaryLanguage,
+            languagesDifferent: detectedLanguage !== summaryLanguage,
+            shouldShowTranslation: shouldShowTranslation,
+            translationTabBtn: !!this.translationTabBtn,
+            downloadTranslationBtn: !!this.downloadTranslationBtn
+        });
+        
+        // 调试：检查DOM元素
+        const debugBtn = document.getElementById('translationTabBtn');
+        console.log('[DEBUG] 🔍 DOM检查:', {
+            elementExists: !!debugBtn,
+            currentDisplay: debugBtn ? debugBtn.style.display : 'N/A',
+            computedStyle: debugBtn ? window.getComputedStyle(debugBtn).display : 'N/A'
+        });
+        
+        if (shouldShowTranslation) {
+            console.log('[DEBUG] ✅ 显示翻译标签页');
+            // 显示翻译标签页和按钮
+            if (this.translationTabBtn) {
+                this.translationTabBtn.style.display = 'inline-block';
+                this.translationTabBtn.style.visibility = 'visible';
+                console.log('[DEBUG] 🎯 翻译按钮样式已设置:', this.translationTabBtn.style.display);
+            }
+            if (this.downloadTranslationBtn) {
+                this.downloadTranslationBtn.style.display = 'inline-flex';
+            }
+            if (this.translationContent) {
+                this.translationContent.innerHTML = marked.parse(safeTranslation);
+            }
+        } else {
+            console.log('[DEBUG] ❌ 隐藏翻译标签页');
+            // 隐藏翻译标签页和按钮
+            if (this.translationTabBtn) {
+                this.translationTabBtn.style.display = 'none';
+            }
+            if (this.downloadTranslationBtn) {
+                this.downloadTranslationBtn.style.display = 'none';
+            }
+        }
         
         // 显示结果区域
         this.resultsSection.style.display = 'block';

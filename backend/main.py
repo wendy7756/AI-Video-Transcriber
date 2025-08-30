@@ -11,10 +11,12 @@ from typing import Optional
 import aiofiles
 import uuid
 import json
+import re
 
-from .video_processor import VideoProcessor
-from .transcriber import Transcriber
-from .summarizer import Summarizer
+from video_processor import VideoProcessor
+from transcriber import Transcriber
+from summarizer import Summarizer
+from translator import Translator
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -45,6 +47,7 @@ TEMP_DIR.mkdir(exist_ok=True)
 video_processor = VideoProcessor()
 transcriber = Transcriber()
 summarizer = Summarizer()
+translator = Translator()
 
 # 存储任务状态 - 使用文件持久化
 import json
@@ -74,12 +77,15 @@ def save_tasks(tasks_data):
 
 async def broadcast_task_update(task_id: str, task_data: dict):
     """向所有连接的SSE客户端广播任务状态更新"""
+    logger.info(f"广播任务更新: {task_id}, 状态: {task_data.get('status')}, 连接数: {len(sse_connections.get(task_id, []))}")
     if task_id in sse_connections:
         connections_to_remove = []
         for queue in sse_connections[task_id]:
             try:
                 await queue.put(json.dumps(task_data, ensure_ascii=False))
-            except:
+                logger.debug(f"消息已发送到队列: {task_id}")
+            except Exception as e:
+                logger.warning(f"发送消息到队列失败: {e}")
                 connections_to_remove.append(queue)
         
         # 移除断开的连接
@@ -98,6 +104,17 @@ processing_urls = set()
 active_tasks = {}
 # 存储SSE连接，用于实时推送状态更新
 sse_connections = {}
+
+def _sanitize_title_for_filename(title: str) -> str:
+    """将视频标题清洗为安全的文件名片段。"""
+    if not title:
+        return "untitled"
+    # 仅保留字母数字、下划线、连字符与空格
+    safe = re.sub(r"[^\w\-\s]", "", title)
+    # 压缩空白并转为下划线
+    safe = re.sub(r"\s+", "_", safe).strip("._-")
+    # 最长限制，避免过长文件名问题
+    return safe[:80] or "untitled"
 
 @app.get("/")
 async def read_root():
@@ -198,10 +215,13 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
 
         # 将Whisper原始转录保存为Markdown文件，供下载/归档
         try:
-            raw_md_filename = f"transcript_raw_{task_id}.md"
+            short_id = task_id.replace("-", "")[:6]
+            safe_title = _sanitize_title_for_filename(video_title)
+            raw_md_filename = f"raw_{safe_title}_{short_id}.md"
             raw_md_path = TEMP_DIR / raw_md_filename
             with open(raw_md_path, "w", encoding="utf-8") as f:
-                f.write(raw_script or "")
+                content_raw = (raw_script or "") + f"\n\nsource: {url}\n"
+                f.write(content_raw)
 
             # 记录原始转录文件路径（仅保存文件名，实际路径位于TEMP_DIR）
             tasks[task_id].update({
@@ -223,12 +243,42 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         # 优化转录文本：修正错别字，按含义分段
         script = await summarizer.optimize_transcript(raw_script)
         
-        # 为转录文本添加标题
-        script_with_title = f"# {video_title}\n\n{script}"
+        # 为转录文本添加标题，并在结尾添加来源链接
+        script_with_title = f"# {video_title}\n\n{script}\n\nsource: {url}\n"
+        
+        # 检查是否需要翻译
+        detected_language = transcriber.get_detected_language(raw_script)
+        logger.info(f"检测到的语言: {detected_language}, 摘要语言: {summary_language}")
+        
+        translation_content = None
+        translation_filename = None
+        translation_path = None
+        
+        if detected_language and translator.should_translate(detected_language, summary_language):
+            logger.info(f"需要翻译: {detected_language} -> {summary_language}")
+            # 更新状态：生成翻译
+            tasks[task_id].update({
+                "progress": 70,
+                "message": "正在生成翻译..."
+            })
+            save_tasks(tasks)
+            await broadcast_task_update(task_id, tasks[task_id])
+            
+            # 翻译转录文本
+            translation_content = await translator.translate_text(script, summary_language, detected_language)
+            translation_with_title = f"# {video_title}\n\n{translation_content}\n\nsource: {url}\n"
+            
+            # 保存翻译到文件
+            translation_filename = f"translation_{safe_title}_{short_id}.md"
+            translation_path = TEMP_DIR / translation_filename
+            async with aiofiles.open(translation_path, "w", encoding="utf-8") as f:
+                await f.write(translation_with_title)
+        else:
+            logger.info(f"不需要翻译: detected_language={detected_language}, summary_language={summary_language}, should_translate={translator.should_translate(detected_language, summary_language) if detected_language else 'N/A'}")
         
         # 更新状态：生成摘要
         tasks[task_id].update({
-            "progress": 75,
+            "progress": 80,
             "message": "正在生成摘要..."
         })
         save_tasks(tasks)
@@ -236,6 +286,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         
         # 生成摘要
         summary = await summarizer.summarize(script, summary_language, video_title)
+        summary_with_source = summary + f"\n\nsource: {url}\n"
         
         # 保存优化后的转录文本到文件
         script_filename = f"transcript_{task_id}.md"
@@ -243,25 +294,52 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         async with aiofiles.open(script_path, "w", encoding="utf-8") as f:
             await f.write(script_with_title)
         
-        # 保存摘要到文件
-        summary_filename = f"summary_{task_id}.md"
+        # 重命名为新规则：transcript_标题_短ID.md
+        new_script_filename = f"transcript_{safe_title}_{short_id}.md"
+        new_script_path = TEMP_DIR / new_script_filename
+        try:
+            if script_path.exists():
+                script_path.rename(new_script_path)
+                script_path = new_script_path
+        except Exception as _:
+            # 如重命名失败，继续使用原路径
+            pass
+
+        # 保存摘要到文件（summary_标题_短ID.md）
+        summary_filename = f"summary_{safe_title}_{short_id}.md"
         summary_path = TEMP_DIR / summary_filename
         async with aiofiles.open(summary_path, "w", encoding="utf-8") as f:
-            await f.write(summary)
+            await f.write(summary_with_source)
         
         # 更新状态：完成
-        tasks[task_id].update({
+        task_result = {
             "status": "completed",
             "progress": 100,
             "message": "处理完成！",
             "video_title": video_title,
             "script": script_with_title,
-            "summary": summary,
+            "summary": summary_with_source,
             "script_path": str(script_path),
-            "summary_path": str(summary_path)
-        })
+            "summary_path": str(summary_path),
+            "short_id": short_id,
+            "safe_title": safe_title,
+            "detected_language": detected_language,
+            "summary_language": summary_language
+        }
+        
+        # 如果有翻译，添加翻译信息
+        if translation_content and translation_path:
+            task_result.update({
+                "translation": translation_with_title,
+                "translation_path": str(translation_path),
+                "translation_filename": translation_filename
+            })
+        
+        tasks[task_id].update(task_result)
         save_tasks(tasks)
+        logger.info(f"任务完成，准备广播最终状态: {task_id}")
         await broadcast_task_update(task_id, tasks[task_id])
+        logger.info(f"最终状态已广播: {task_id}")
         
         # 从处理列表中移除URL
         processing_urls.discard(url)
@@ -379,29 +457,49 @@ async def download_file(task_id: str, file_type: str):
         if script_path and Path(script_path).exists():
             return FileResponse(
                 script_path,
-                filename=f"transcript_{task_id}.md",
+                filename=Path(script_path).name,
                 media_type="text/markdown"
             )
         else:
             # Fallback: 从内存创建临时文件
             content = task["script"]
-            filename = f"transcript_{task_id}.md"
+            short_id = task.get("short_id", task_id.replace("-", "")[:6])
+            safe_title = task.get("safe_title", "untitled")
+            filename = f"transcript_{safe_title}_{short_id}.md"
     elif file_type == "summary":
         # 优先使用已保存的文件，fallback到内存内容
         summary_path = task.get("summary_path")
         if summary_path and Path(summary_path).exists():
             return FileResponse(
                 summary_path,
-                filename=f"summary_{task_id}.md",
+                filename=Path(summary_path).name,
                 media_type="text/markdown"
             )
         else:
             # Fallback: 从内存创建临时文件
             content = task["summary"]
-            filename = f"summary_{task_id}.md"
+            short_id = task.get("short_id", task_id.replace("-", "")[:6])
+            safe_title = task.get("safe_title", "untitled")
+            filename = f"summary_{safe_title}_{short_id}.md"
+    elif file_type == "translation":
+        # 翻译文件
+        translation_path = task.get("translation_path")
+        if translation_path and Path(translation_path).exists():
+            return FileResponse(
+                translation_path,
+                filename=Path(translation_path).name,
+                media_type="text/markdown"
+            )
+        else:
+            # 如果没有翻译文件，返回404
+            raise HTTPException(status_code=404, detail="翻译文件不存在")
     elif file_type == "raw_script":
         # 原始Whisper转录直接从已保存的Markdown文件返回
-        raw_name = task.get("raw_script_file", f"transcript_raw_{task_id}.md")
+        raw_name = task.get("raw_script_file")
+        if not raw_name:
+            short_id = task.get("short_id", task_id.replace("-", "")[:6])
+            safe_title = task.get("safe_title", "untitled")
+            raw_name = f"raw_{safe_title}_{short_id}.md"
         raw_path = TEMP_DIR / raw_name
         if not raw_path.exists():
             raise HTTPException(status_code=404, detail="原始转录文件不存在")

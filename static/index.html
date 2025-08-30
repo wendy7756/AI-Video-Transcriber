@@ -492,6 +492,9 @@
                     <button class="btn btn-success" id="downloadScript">
                         <i class="fas fa-download"></i> <span data-i18n="download_transcript">Download Transcript</span>
                     </button>
+                    <button class="btn btn-info" id="downloadTranslation" style="display: none;">
+                        <i class="fas fa-download"></i> <span data-i18n="download_translation">Download Translation</span>
+                    </button>
                     <button class="btn btn-success" id="downloadSummary">
                         <i class="fas fa-download"></i> <span data-i18n="download_summary">Download Summary</span>
                     </button>
@@ -505,12 +508,19 @@
                 <button class="tab-button" data-tab="summary">
                     <i class="fas fa-clipboard-list"></i> <span data-i18n="intelligent_summary">AI Summary</span>
                 </button>
+                <button class="tab-button" data-tab="translation" id="translationTabBtn" style="display: none;">
+                    <i class="fas fa-language"></i> <span data-i18n="translation">Translation</span>
+                </button>
             </div>
             
-            <div id="scriptTab" class="tab-content active">
+                        <div id="scriptTab" class="tab-content active">
                 <div class="markdown-content" id="scriptContent"></div>
             </div>
-            
+
+            <div id="translationTab" class="tab-content">
+                <div class="markdown-content" id="translationContent"></div>
+            </div>
+
             <div id="summaryTab" class="tab-content">
                 <div class="markdown-content" id="summaryContent"></div>
             </div>

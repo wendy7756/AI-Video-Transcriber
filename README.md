@@ -16,10 +16,8 @@ An AI-powered video transcription and summarization tool that supports multiple 
 - 🗣️ **Intelligent Transcription**: High-accuracy speech-to-text using Faster-Whisper
 - 🤖 **AI Text Optimization**: Automatic typo correction, sentence completion, and intelligent paragraphing
 - 🌍 **Multi-Language Summaries**: Generate intelligent summaries in multiple languages
-- 📝 **Markdown Output**: Both transcripts and summaries are displayed and downloadable in Markdown format
 - ⚡ **Real-Time Progress**: Live progress tracking and status updates
-- 🎨 **Beautiful Interface**: Modern, responsive web interface
-- **🌍 Conditional Translation (New)**: When the selected summary language differs from the detected transcript language, the system auto-translates with GPT‑4o
+- ⚙️ **Conditional Translation**: When the selected summary language differs from the detected transcript language, the system auto-translates with GPT‑4o
 - 📱 **Mobile-Friendly**: Perfect support for mobile devices
 
 ## 🚀 Quick Start

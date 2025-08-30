@@ -19,6 +19,7 @@ An AI-powered video transcription and summarization tool that supports multiple 
 - 📝 **Markdown Output**: Both transcripts and summaries are displayed and downloadable in Markdown format
 - ⚡ **Real-Time Progress**: Live progress tracking and status updates
 - 🎨 **Beautiful Interface**: Modern, responsive web interface
+- **🌍 Conditional Translation (New)**: When the selected summary language differs from the detected transcript language, the system auto-translates with GPT‑4o
 - 📱 **Mobile-Friendly**: Perfect support for mobile devices
 
 ## 🚀 Quick Start
@@ -76,6 +77,16 @@ python3 start.py
 
 After the service starts, open your browser and visit `http://localhost:8000`
 
+#### Production Mode (Recommended for long videos)
+
+To avoid SSE disconnections during long processing, start in production mode (hot-reload disabled):
+
+```bash
+python3 start.py --prod
+```
+
+This keeps the SSE connection stable throughout long tasks (30–60+ min).
+
 ## 📖 Usage Guide
 
 1. **Enter Video URL**: Paste a video link from YouTube, Bilibili, or other supported platforms
@@ -87,7 +98,8 @@ After the service starts, open your browser and visit `http://localhost:8000`
    - AI-powered transcript optimization (typo correction, sentence completion, intelligent paragraphing)
    - AI summary generation in selected language
 5. **View Results**: Review the optimized transcript and intelligent summary
-6. **Download Files**: Click download buttons to save Markdown-formatted files
+   - If transcript language ≠ selected summary language, a third tab “Translation” is shown containing a translated transcript
+6. **Download Files**: Click download buttons to save Markdown-formatted files (Transcript / Translation / Summary)
 
 ## 🛠️ Technical Architecture
 

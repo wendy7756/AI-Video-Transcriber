@@ -118,6 +118,12 @@ class VideoTranscriber {
         this.downloadSummaryBtn = document.getElementById('downloadSummary');
         this.translationTabBtn = document.getElementById('translationTabBtn');
         
+        // 调试：检查元素是否正确初始化
+        console.log('[DEBUG] 🔧 初始化检查:', {
+            translationTabBtn: !!this.translationTabBtn,
+            elementId: this.translationTabBtn ? this.translationTabBtn.id : 'N/A'
+        });
+        
         // 标签页
         this.tabButtons = document.querySelectorAll('.tab-button');
         this.tabContents = document.querySelectorAll('.tab-content');
@@ -596,13 +602,25 @@ class VideoTranscriber {
             downloadTranslationBtn: !!this.downloadTranslationBtn
         });
         
-        // 调试：检查DOM元素
-        const debugBtn = document.getElementById('translationTabBtn');
+        // 调试：检查DOM元素（多种方式）
+        const debugBtn1 = document.getElementById('translationTabBtn');
+        const debugBtn2 = document.querySelector('#translationTabBtn');
+        const debugBtn3 = document.querySelector('[data-tab="translation"]');
+        
         console.log('[DEBUG] 🔍 DOM检查:', {
-            elementExists: !!debugBtn,
-            currentDisplay: debugBtn ? debugBtn.style.display : 'N/A',
-            computedStyle: debugBtn ? window.getComputedStyle(debugBtn).display : 'N/A'
+            getElementById: !!debugBtn1,
+            querySelector_id: !!debugBtn2,
+            querySelector_attr: !!debugBtn3,
+            currentDisplay: debugBtn1 ? debugBtn1.style.display : 'N/A',
+            computedStyle: debugBtn1 ? window.getComputedStyle(debugBtn1).display : 'N/A'
         });
+        
+        // 使用备用方法获取元素
+        const actualBtn = debugBtn1 || debugBtn2 || debugBtn3;
+        if (actualBtn && !this.translationTabBtn) {
+            this.translationTabBtn = actualBtn;
+            console.log('[DEBUG] 🔄 使用备用方法找到翻译按钮');
+        }
         
         if (shouldShowTranslation) {
             console.log('[DEBUG] ✅ 显示翻译标签页');

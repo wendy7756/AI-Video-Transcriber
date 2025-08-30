@@ -57,19 +57,19 @@ class Summarizer:
             if not self.client:
                 logger.warning("OpenAI API不可用，返回原始转录")
                 return raw_transcript
-            
-            # 粗略估算token数（中文按1.2倍，英文按4:1）
-            estimated_tokens = self._estimate_tokens(raw_transcript)
-            max_input_tokens = 90000  # 保守估计，为输出预留空间
-            
-            if estimated_tokens <= max_input_tokens:
-                # 短文本直接处理
-                return await self._optimize_single_chunk(raw_transcript)
+
+            # 预处理：仅移除时间戳与元信息，保留全部口语/重复内容
+            preprocessed = self._remove_timestamps_and_meta(raw_transcript)
+            # 使用JS策略：按字符长度分块（更贴近tokens上限，避免估算误差）
+            detected_lang_code = self._detect_transcript_language(preprocessed)
+            max_chars_per_chunk = 4000  # 对齐JS：每块最大约4000字符
+
+            if len(preprocessed) > max_chars_per_chunk:
+                logger.info(f"文本较长({len(preprocessed)} chars)，启用分块优化")
+                return await self._format_long_transcript_in_chunks(preprocessed, detected_lang_code, max_chars_per_chunk)
             else:
-                # 长文本分块处理
-                logger.info(f"文本较长({estimated_tokens} tokens)，启用分块优化")
-                return await self._optimize_with_chunks(raw_transcript, max_input_tokens)
-            
+                return await self._format_single_chunk(preprocessed, detected_lang_code)
+
         except Exception as e:
             logger.error(f"优化转录文本失败: {str(e)}")
             logger.info("返回原始转录文本")
@@ -77,14 +77,25 @@ class Summarizer:
 
     def _estimate_tokens(self, text: str) -> int:
         """
-        粗略估算文本的token数量
+        改进的token数量估算算法
+        更保守的估算，考虑系统prompt和格式化开销
         """
-        # 简单估算：中文字符*1.2，英文单词*1，其他字符/4
+        # 更保守的估算：考虑实际使用中的token膨胀
         chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
         english_words = len([word for word in text.split() if word.isascii() and word.isalpha()])
-        other_chars = len(text) - chinese_chars - sum(len(word) for word in text.split() if word.isascii())
         
-        return int(chinese_chars * 1.2 + english_words + other_chars / 4)
+        # 计算基础tokens
+        base_tokens = chinese_chars * 1.5 + english_words * 1.3
+        
+        # 考虑markdown格式、时间戳等开销（约30%额外开销）
+        format_overhead = len(text) * 0.15
+        
+        # 考虑系统prompt开销（约2000-3000 tokens）
+        system_prompt_overhead = 2500
+        
+        total_estimated = int(base_tokens + format_overhead + system_prompt_overhead)
+        
+        return total_estimated
 
     async def _optimize_single_chunk(self, raw_transcript: str) -> str:
         """
@@ -150,7 +161,7 @@ class Summarizer:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=4000,
+            max_tokens=4000,  # 对齐JS：优化/格式化阶段最大tokens≈4000
             temperature=0.1
         )
         
@@ -198,7 +209,7 @@ class Summarizer:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_tokens=3000,
+                    max_tokens=1200,  # 适应4000 tokens总限制
                     temperature=0.1
                 )
                 
@@ -220,6 +231,315 @@ class Summarizer:
         
         logger.info("分块优化完成")
         return final_result
+
+    # ===== JS openaiService.js 移植：分块/上下文/去重/格式化 =====
+
+    def _ensure_markdown_paragraphs(self, text: str) -> str:
+        """确保Markdown段落空行、标题后空行、压缩多余空行。"""
+        if not text:
+            return text
+        formatted = text.replace("\r\n", "\n")
+        import re
+        # 标题后加空行
+        formatted = re.sub(r"(^#{1,6}\s+.*)\n([^\n#])", r"\1\n\n\2", formatted, flags=re.M)
+        # 压缩≥3个换行为2个
+        formatted = re.sub(r"\n{3,}", "\n\n", formatted)
+        # 去首尾空行
+        formatted = re.sub(r"^\n+", "", formatted)
+        formatted = re.sub(r"\n+$", "", formatted)
+        return formatted
+
+    async def _format_single_chunk(self, chunk_text: str, transcript_language: str = 'zh') -> str:
+        """单块优化（修正+格式化），遵循4000 tokens 限制。"""
+        # 构建与JS版一致的系统/用户提示
+        if transcript_language == 'zh':
+            prompt = (
+                "请对以下音频转录文本进行智能优化和格式化，要求：\n\n"
+                "**内容优化（正确性优先）：**\n"
+                "1. 错误修正（转录错误/错别字/同音字/专有名词）\n"
+                "2. 适度改善语法，补全不完整句子，保持原意和语言不变\n"
+                "3. 口语处理：保留自然口语与重复表达，不要删减内容，仅添加必要标点\n\n"
+                "**分段规则：**\n"
+                "- 话题/环节/说话人变化时分段；单段不超过250字符\n\n"
+                "**格式要求：**Markdown 段落，段落间空行\n\n"
+                f"原始转录文本：\n{chunk_text}"
+            )
+            system_prompt = (
+                "你是专业的音频转录文本优化助手，修正错误、改善通顺度和排版格式，"
+                "必须保持原意，不得删减口语/重复/细节；仅移除时间戳或元信息。"
+            )
+        else:
+            prompt = (
+                "Please intelligently optimize and format the following audio transcript text:\n\n"
+                "Content Optimization (Accuracy First):\n"
+                "1. Error Correction (typos, homophones, proper nouns)\n"
+                "2. Moderate grammar improvement, complete incomplete sentences, keep original language/meaning\n"
+                "3. Speech processing: keep natural fillers and repetitions, do NOT remove content; only add punctuation if needed\n\n"
+                "Segmentation Rules: split on topic/section/speaker change; each paragraph must NOT exceed 250 characters\n\n"
+                "Format: Markdown paragraphs with blank lines between paragraphs\n\n"
+                f"Original transcript text:\n{chunk_text}"
+            )
+            system_prompt = (
+                "You are a professional transcript formatting assistant. Fix errors and improve fluency "
+                "without changing meaning or removing any content; only timestamps/meta may be removed; keep Markdown paragraphs with blank lines."
+            )
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=4000,  # 对齐JS：优化/格式化阶段最大tokens≈4000
+                temperature=0.1
+            )
+            optimized_text = response.choices[0].message.content or ""
+            # 移除诸如 "# Transcript" / "## Transcript" 等标题
+            optimized_text = self._remove_transcript_heading(optimized_text)
+            enforced = self._enforce_paragraph_max_chars(optimized_text.strip(), max_chars=250)
+            return self._ensure_markdown_paragraphs(enforced)
+        except Exception as e:
+            logger.error(f"单块文本优化失败: {e}")
+            return self._apply_basic_formatting(chunk_text)
+
+    def _smart_split_long_chunk(self, text: str, max_chars_per_chunk: int) -> list:
+        """在句子/空格边界处安全切分超长文本。"""
+        chunks = []
+        pos = 0
+        while pos < len(text):
+            end = min(pos + max_chars_per_chunk, len(text))
+            if end < len(text):
+                # 优先句子边界
+                sentence_endings = ['。', '！', '？', '.', '!', '?']
+                best = -1
+                for ch in sentence_endings:
+                    idx = text.rfind(ch, pos, end)
+                    if idx > best:
+                        best = idx
+                if best > pos + int(max_chars_per_chunk * 0.7):
+                    end = best + 1
+                else:
+                    # 次选：空格边界
+                    space_idx = text.rfind(' ', pos, end)
+                    if space_idx > pos + int(max_chars_per_chunk * 0.8):
+                        end = space_idx
+            chunks.append(text[pos:end].strip())
+            pos = end
+        return [c for c in chunks if c]
+
+    def _find_safe_cut_point(self, text: str) -> int:
+        """找到安全的切割点（段落>句子>短语）。"""
+        import re
+        # 段落
+        p = text.rfind("\n\n")
+        if p > 0:
+            return p + 2
+        # 句子
+        last_sentence_end = -1
+        for m in re.finditer(r"[。！？\.!?]\s*", text):
+            last_sentence_end = m.end()
+        if last_sentence_end > 20:
+            return last_sentence_end
+        # 短语
+        last_phrase_end = -1
+        for m in re.finditer(r"[，；,;]\s*", text):
+            last_phrase_end = m.end()
+        if last_phrase_end > 20:
+            return last_phrase_end
+        return len(text)
+
+    def _find_overlap_between_texts(self, text1: str, text2: str) -> str:
+        """检测相邻两段的重叠内容，用于去重。"""
+        max_len = min(len(text1), len(text2))
+        # 逐步从长到短尝试
+        for length in range(max_len, 19, -1):
+            suffix = text1[-length:]
+            prefix = text2[:length]
+            if suffix == prefix:
+                cut = self._find_safe_cut_point(prefix)
+                if cut > 20:
+                    return prefix[:cut]
+                return suffix
+        return ""
+
+    def _apply_basic_formatting(self, text: str) -> str:
+        """当AI失败时的回退：按句子拼段，段落≤250字符，双换行分隔。"""
+        if not text or not text.strip():
+            return text
+        import re
+        parts = re.split(r"([。！？\.!?]+\s*)", text)
+        sentences = []
+        current = ""
+        for i, part in enumerate(parts):
+            if i % 2 == 0:
+                current += part
+            else:
+                current += part
+                if current.strip():
+                    sentences.append(current.strip())
+                    current = ""
+        if current.strip():
+            sentences.append(current.strip())
+        paras = []
+        cur = ""
+        for s in sentences:
+            candidate = (cur + " " + s).strip() if cur else s
+            if len(candidate) > 250 and cur:
+                paras.append(cur.strip())
+                cur = s
+            else:
+                cur = candidate
+        if cur.strip():
+            paras.append(cur.strip())
+        return self._ensure_markdown_paragraphs("\n\n".join(paras))
+
+    async def _format_long_transcript_in_chunks(self, raw_transcript: str, transcript_language: str, max_chars_per_chunk: int) -> str:
+        """智能分块+上下文+去重 合成优化文本（JS策略移植）。"""
+        import re
+        # 先按句子切分，组装不超过max_chars_per_chunk的块
+        parts = re.split(r"([。！？\.!?]+\s*)", raw_transcript)
+        sentences = []
+        buf = ""
+        for i, part in enumerate(parts):
+            if i % 2 == 0:
+                buf += part
+            else:
+                buf += part
+                if buf.strip():
+                    sentences.append(buf.strip())
+                    buf = ""
+        if buf.strip():
+            sentences.append(buf.strip())
+
+        chunks = []
+        cur = ""
+        for s in sentences:
+            candidate = (cur + " " + s).strip() if cur else s
+            if len(candidate) > max_chars_per_chunk and cur:
+                chunks.append(cur.strip())
+                cur = s
+            else:
+                cur = candidate
+        if cur.strip():
+            chunks.append(cur.strip())
+
+        # 对仍然过长的块二次安全切分
+        final_chunks = []
+        for c in chunks:
+            if len(c) <= max_chars_per_chunk:
+                final_chunks.append(c)
+            else:
+                final_chunks.extend(self._smart_split_long_chunk(c, max_chars_per_chunk))
+
+        logger.info(f"文本分为 {len(final_chunks)} 块处理")
+
+        optimized = []
+        for i, c in enumerate(final_chunks):
+            chunk_with_context = c
+            if i > 0:
+                prev_tail = final_chunks[i - 1][-100:]
+                marker = f"[上文续：{prev_tail}]" if transcript_language == 'zh' else f"[Context continued: {prev_tail}]"
+                chunk_with_context = marker + "\n\n" + c
+            try:
+                oc = await self._format_single_chunk(chunk_with_context, transcript_language)
+                # 移除上下文标记
+                oc = re.sub(r"^\[(上文续|Context continued)：?:?.*?\]\s*", "", oc, flags=re.S)
+                optimized.append(oc)
+            except Exception as e:
+                logger.warning(f"第 {i+1} 块优化失败，使用基础格式化: {e}")
+                optimized.append(self._apply_basic_formatting(c))
+
+        # 邻接块去重
+        deduped = []
+        for i, c in enumerate(optimized):
+            cur_txt = c
+            if i > 0 and deduped:
+                prev = deduped[-1]
+                overlap = self._find_overlap_between_texts(prev[-200:], cur_txt[:200])
+                if overlap:
+                    cur_txt = cur_txt[len(overlap):].lstrip()
+                    if not cur_txt:
+                        continue
+            if cur_txt.strip():
+                deduped.append(cur_txt)
+
+        merged = "\n\n".join(deduped)
+        merged = self._remove_transcript_heading(merged)
+        enforced = self._enforce_paragraph_max_chars(merged, max_chars=250)
+        return self._ensure_markdown_paragraphs(enforced)
+
+    def _remove_timestamps_and_meta(self, text: str) -> str:
+        """仅移除时间戳行与明显元信息（标题、检测语言等），保留原文口语/重复。"""
+        lines = text.split('\n')
+        kept = []
+        for line in lines:
+            s = line.strip()
+            # 跳过时间戳与元信息
+            if (s.startswith('**[') and s.endswith(']**')):
+                continue
+            if s.startswith('# '):
+                # 跳过顶级标题（通常是视频标题，可在最终加回）
+                continue
+            if s.startswith('**检测语言:**') or s.startswith('**语言概率:**'):
+                continue
+            kept.append(line)
+        # 规范空行
+        cleaned = '\n'.join(kept)
+        return cleaned
+
+    def _enforce_paragraph_max_chars(self, text: str, max_chars: int = 250) -> str:
+        """按段落拆分并确保每段不超过max_chars，必要时按句子边界拆为多段。"""
+        if not text:
+            return text
+        import re
+        paragraphs = [p for p in re.split(r"\n\s*\n", text) if p is not None]
+        new_paragraphs = []
+        for para in paragraphs:
+            para = para.strip()
+            if len(para) <= max_chars:
+                new_paragraphs.append(para)
+                continue
+            # 句子切分
+            parts = re.split(r"([。！？\.!?]+\s*)", para)
+            sentences = []
+            buf = ""
+            for i, part in enumerate(parts):
+                if i % 2 == 0:
+                    buf += part
+                else:
+                    buf += part
+                    if buf.strip():
+                        sentences.append(buf.strip())
+                        buf = ""
+            if buf.strip():
+                sentences.append(buf.strip())
+            cur = ""
+            for s in sentences:
+                candidate = (cur + (" " if cur else "") + s).strip()
+                if len(candidate) > max_chars and cur:
+                    new_paragraphs.append(cur)
+                    cur = s
+                else:
+                    cur = candidate
+            if cur:
+                new_paragraphs.append(cur)
+        return "\n\n".join([p.strip() for p in new_paragraphs if p is not None])
+
+    def _remove_transcript_heading(self, text: str) -> str:
+        """移除开头或段落中的以 Transcript 为标题的行（任意级别#），不改变正文。"""
+        if not text:
+            return text
+        import re
+        # 移除形如 '## Transcript'、'# Transcript Text'、'### transcript' 的标题行
+        lines = text.split('\n')
+        filtered = []
+        for line in lines:
+            stripped = line.strip()
+            if re.match(r"^#{1,6}\s*transcript(\s+text)?\s*$", stripped, flags=re.I):
+                continue
+            filtered.append(line)
+        return '\n'.join(filtered)
 
     def _split_into_chunks(self, text: str, max_tokens: int) -> list:
         """
@@ -405,7 +725,7 @@ class Summarizer:
         try:
             # 估算文本长度，如果太长则分块处理
             estimated_tokens = self._estimate_tokens(text)
-            if estimated_tokens > 15000:  # 对于很长的文本，分块处理
+            if estimated_tokens > 3000:  # 对于很长的文本，分块处理
                 return await self._organize_long_text_paragraphs(text, lang_instruction)
             
             system_prompt = f"""你是专业的{lang_instruction}文本段落整理专家。你的任务是按照语义和逻辑重新组织段落。
@@ -442,7 +762,7 @@ class Summarizer:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=4000,  # 增加token限制
+                max_tokens=4000,  # 对齐JS：段落整理阶段最大tokens≈4000
                 temperature=0.05  # 降低温度，提高一致性
             )
             
@@ -469,7 +789,7 @@ class Summarizer:
             
             current_chunk = []
             current_tokens = 0
-            max_chunk_tokens = 12000  # 保守的chunk大小
+            max_chunk_tokens = 2500  # 适应4000 tokens限制的chunk大小
             
             for para in paragraphs:
                 para_tokens = self._estimate_tokens(para)
@@ -521,7 +841,7 @@ class Summarizer:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=3000,
+            max_tokens=1200,  # 适应4000 tokens总限制
             temperature=0.05
         )
         
@@ -631,7 +951,7 @@ class Summarizer:
             
             # 估算转录文本长度，决定是否需要分块摘要
             estimated_tokens = self._estimate_tokens(transcript)
-            max_summarize_tokens = 60000  # 摘要输入token限制更保守
+            max_summarize_tokens = 4000  # 提高限制，优先使用单文本处理以获得更好的总结质量
             
             if estimated_tokens <= max_summarize_tokens:
                 # 短文本直接摘要
@@ -652,30 +972,24 @@ class Summarizer:
         # 获取目标语言名称
         language_name = self.language_map.get(target_language, "中文（简体）")
         
-        # 构建提示词
-        system_prompt = f"""你是一个专业的内容总结专家。请为视频内容生成一个连贯、深度的总结。
+        # 构建提示词（放宽格式，允许自然段或少量条目；强调覆盖度与篇幅）
+        system_prompt = f"""你是资深内容编辑。请用{language_name}对全文进行高质量总结，不强制使用小标题或固定结构；以自然段为主，必要时可用少量条目。
 
-要求：
-1. 使用{language_name}进行总结
-2. 生成连贯的段落式总结，避免简单的要点罗列
-3. 将相关观点整合在一起，形成完整的论述
-4. 保持逻辑层次，从整体到具体
-5. 突出核心思想和关键洞察
-6. 语言流畅自然，读起来像一篇完整的文章
-7. 适当使用过渡句连接不同部分
+目标：
+- 全面覆盖核心观点、关键论证、重要例子/数据、关键结论/启示、可执行建议（如有）。
+- 忠实原文，不臆造；逻辑清楚、语言自然；避免逐句复述；适度去重但不遗漏信息。
+- 保持信息密度与可读性的平衡。
+- 篇幅建议：不少于600字，必要时可达1200字。"""
 
-格式要求：
-- 使用自然的段落结构
-- 每段专注一个主要方面
-- 段落间有逻辑递进关系
-- 避免简单的列表和要点
-- 整体应该是一个完整、连贯的叙述"""
-
-        user_prompt = f"""请为以下视频内容生成一个连贯的{language_name}总结：
+        user_prompt = f"""请基于以下内容，写出一篇信息全面、结构清晰、篇幅充足的{language_name}总结：
 
 {transcript}
 
-要求：写成流畅的段落文章，整合相关观点，避免简单罗列，突出核心思想和逻辑脉络。"""
+要求：
+- 自然段为主，可辅以少量条目；不使用装饰性小标题或格式；
+- 覆盖全文关键思想与论据，保留重要例子或数据；
+- 关注前半段与后半段的均衡覆盖；
+- 语言克制但内容充分，篇幅不少于600字。"""
 
         logger.info(f"正在生成{language_name}摘要...")
         
@@ -686,23 +1000,24 @@ class Summarizer:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=3000,
+            max_tokens=3500,  # 控制在安全范围内，避免超出模型限制
             temperature=0.3
         )
         
         summary = response.choices[0].message.content
-        
-        # 添加元信息和标题
-        return self._format_summary_with_meta(summary, target_language, video_title)
+
+        # 轻度润色后再返回
+        polished = await self._polish_summary(summary, target_language)
+        return self._format_summary_with_meta(polished, target_language, video_title)
 
     async def _summarize_with_chunks(self, transcript: str, target_language: str, video_title: str, max_tokens: int) -> str:
         """
         分块摘要长文本
         """
         language_name = self.language_map.get(target_language, "中文（简体）")
-        
-        # 将长文本分割为块
-        chunks = self._split_into_chunks(transcript, max_tokens)
+
+        # 使用JS策略：按字符进行智能分块（段落>句子）
+        chunks = self._smart_chunk_text(transcript, max_chars_per_chunk=4000)
         logger.info(f"分割为 {len(chunks)} 个块进行摘要")
         
         chunk_summaries = []
@@ -711,21 +1026,17 @@ class Summarizer:
         for i, chunk in enumerate(chunks):
             logger.info(f"正在摘要第 {i+1}/{len(chunks)} 块...")
             
-            system_prompt = f"""你是摘要专家。请为这段文本生成简洁的{language_name}摘要。
+            system_prompt = f"""你是摘要专家。请为该分块写一段高密度小结（{language_name}）。
 
-这是完整内容的第{i+1}部分，共{len(chunks)}部分。
+这是完整内容的第{i+1}部分，共{len(chunks)}部分（编号：Part {i+1}/{len(chunks)}）。
 
-要求：
-1. 使用{language_name}
-2. 抓住本段的核心要点
-3. 保持简洁但完整
-4. 为后续合并做准备"""
+输出偏好：自然段为主，必要时可用极少量条目；突出新增信息及其与主线的关系；避免空泛复述与格式化标题；篇幅适中（建议120-220字）。"""
 
-            user_prompt = f"""摘要以下文本的核心内容：
+            user_prompt = f"""[Part {i+1}/{len(chunks)}] 概括以下文本的要点（自然段为主，可少量条目，120-220字）：
 
 {chunk}
 
-输出简洁的{language_name}摘要。"""
+请避免使用任何小标题或装饰性分隔，只输出内容。"""
 
             try:
                 response = self.client.chat.completions.create(
@@ -734,7 +1045,7 @@ class Summarizer:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_tokens=800,
+                    max_tokens=1000,  # 提升分块摘要容量以涵盖更多细节
                     temperature=0.3
                 )
                 
@@ -747,15 +1058,53 @@ class Summarizer:
                 simple_summary = f"第{i+1}部分内容概述：" + chunk[:200] + "..."
                 chunk_summaries.append(simple_summary)
         
-        # 合并所有局部摘要
-        combined_summaries = "\n\n".join(chunk_summaries)
-        
-        # 对合并的摘要进行最终整合
+        # 合并所有局部摘要（带编号），如分块较多则分层整合（不引入小标题）
+        combined_summaries = "\n\n".join([f"[Part {idx+1}]\n" + s for idx, s in enumerate(chunk_summaries)])
+
         logger.info("正在整合最终摘要...")
-        final_summary = await self._integrate_chunk_summaries(combined_summaries, target_language)
-        
-        # 添加元信息和标题
-        return self._format_summary_with_meta(final_summary, target_language, video_title)
+        if len(chunk_summaries) > 10:
+            final_summary = await self._integrate_hierarchical_summaries(chunk_summaries, target_language)
+        else:
+            final_summary = await self._integrate_chunk_summaries(combined_summaries, target_language)
+
+        # 轻度润色后再返回
+        polished = await self._polish_summary(final_summary, target_language)
+        return self._format_summary_with_meta(polished, target_language, video_title)
+
+    def _smart_chunk_text(self, text: str, max_chars_per_chunk: int = 3500) -> list:
+        """智能分块（先段落后句子），按字符上限切分。"""
+        chunks = []
+        paragraphs = [p for p in text.split('\n\n') if p.strip()]
+        cur = ""
+        for p in paragraphs:
+            candidate = (cur + "\n\n" + p).strip() if cur else p
+            if len(candidate) > max_chars_per_chunk and cur:
+                chunks.append(cur.strip())
+                cur = p
+            else:
+                cur = candidate
+        if cur.strip():
+            chunks.append(cur.strip())
+
+        # 二次按句子切分过长块
+        import re
+        final_chunks = []
+        for c in chunks:
+            if len(c) <= max_chars_per_chunk:
+                final_chunks.append(c)
+            else:
+                sentences = [s.strip() for s in re.split(r"[。！？\.!?]+", c) if s.strip()]
+                scur = ""
+                for s in sentences:
+                    candidate = (scur + '。' + s).strip() if scur else s
+                    if len(candidate) > max_chars_per_chunk and scur:
+                        final_chunks.append(scur.strip())
+                        scur = s
+                    else:
+                        scur = candidate
+                if scur.strip():
+                    final_chunks.append(scur.strip())
+        return final_chunks
 
     async def _integrate_chunk_summaries(self, combined_summaries: str, target_language: str) -> str:
         """
@@ -764,20 +1113,15 @@ class Summarizer:
         language_name = self.language_map.get(target_language, "中文（简体）")
         
         try:
-            system_prompt = f"""你是内容整合专家。请将多个分段摘要整合为一个连贯完整的{language_name}总结。
+            system_prompt = f"""你是内容整合专家。请把多段“编号摘要（Part 1..N）”整合为一篇流畅连贯且覆盖充分的{language_name}总结。
 
-要求：
-1. 整合所有要点，消除重复
-2. 建立逻辑联系和层次结构
-3. 写成连贯的段落式文章
-4. 突出核心主题和关键观点
-5. 语言流畅自然，避免生硬拼接"""
+必须按编号顺序覆盖所有部分，不得跳过前半段；合并相近要点、消除重复与冲突；允许自然段或少量条目，但不要使用小标题；篇幅建议800-1500字，保证论点与论据充分。"""
 
-            user_prompt = f"""请将以下分段摘要整合为一篇连贯的{language_name}总结文章：
+            user_prompt = f"""将以下分段摘要整合为一篇完整总结（自然段为主，可少量条目；不使用小标题；800-1500字）：
 
 {combined_summaries}
 
-要求：整合所有内容，形成逻辑清晰、语言流畅的完整文章。"""
+请确保覆盖所有Part的关键信息，语言自然、信息密度高，只输出总结正文。"""
 
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
@@ -785,7 +1129,7 @@ class Summarizer:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=2000,
+                max_tokens=2500,  # 控制输出规模，兼顾上下文安全
                 temperature=0.3
             )
             
@@ -803,22 +1147,41 @@ class Summarizer:
         language_name = self.language_map.get(target_language, "中文（简体）")
         meta_labels = self._get_summary_labels(target_language)
         
-        # 直接使用视频标题作为主标题
-        title = video_title if video_title else "Summary"
-        
-        summary_with_meta = f"""# {title}
+        # 不加任何小标题/免责声明，可保留视频标题作为一级标题
+        if video_title:
+            prefix = f"# {video_title}\n\n"
+        else:
+            prefix = ""
+        return prefix + summary
 
-**{meta_labels['language_label']}:** {language_name}
+    async def _polish_summary(self, text: str, target_language: str) -> str:
+        """对已生成的总结做轻度润色：去重、顺序更自然、措辞更简洁，不新增事实。"""
+        if not self.client:
+            return text
+        language_name = self.language_map.get(target_language, "中文（简体）")
+        system_prompt = f"""你是资深编辑。用{language_name}对给定总结做轻度润色：
+- 不改变事实与结论，不新增内容；
+- 去除重复、口语化与冗余；
+- 顺序更自然，措辞更简洁；
+- 不添加小标题或装饰性格式。"""
+        user_prompt = f"""润色以下总结，使其更流畅、紧凑：
 
+{text}
 
-{summary}
-
-
-<br/>
-
-<p style="color: #888; font-style: italic; text-align: center; margin-top: 24px;"><em>{meta_labels['disclaimer']}</em></p>"""
-        
-        return summary_with_meta
+只返回润色后的正文。"""
+        try:
+            resp = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=800,
+                temperature=0.2,
+            )
+            return resp.choices[0].message.content
+        except Exception:
+            return text
     
     def _generate_fallback_summary(self, transcript: str, target_language: str, video_title: str = None) -> str:
         """

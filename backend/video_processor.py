@@ -15,10 +15,12 @@ class VideoProcessor:
             'outtmpl': '%(title)s.%(ext)s',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
+                # 直接在提取阶段转换为单声道 16k（空间小且稳定）
                 'preferredcodec': 'm4a',
                 'preferredquality': '192'
             }],
-            'postprocessor_args': ['-movflags', '+faststart'],  # 全局FFmpeg参数
+            # 全局FFmpeg参数：单声道 + 16k 采样率 + faststart
+            'postprocessor_args': ['-ac', '1', '-ar', '16000', '-movflags', '+faststart'],
             'prefer_ffmpeg': True,
             'quiet': True,
             'no_warnings': True,

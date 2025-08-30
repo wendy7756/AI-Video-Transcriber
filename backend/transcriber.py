@@ -17,6 +17,7 @@ class Transcriber:
         """
         self.model_size = model_size
         self.model = None
+        self.last_detected_language = None
         
     def _load_model(self):
         """延迟加载模型"""
@@ -58,11 +59,23 @@ class Transcriber:
                     language=language,
                     beam_size=5,
                     best_of=5,
-                    temperature=0.0
+                    temperature=[0.0, 0.2, 0.4],  # 使用温度递增策略
+                    # 更稳健：开启VAD与阈值，降低静音/噪音导致的重复
+                    vad_filter=True,
+                    vad_parameters={
+                        "min_silence_duration_ms": 900,  # 静音检测时长
+                        "speech_pad_ms": 300  # 语音填充
+                    },
+                    no_speech_threshold=0.7,  # 无语音阈值
+                    compression_ratio_threshold=2.3,  # 压缩比阈值，检测重复
+                    log_prob_threshold=-1.0,  # 日志概率阈值
+                    # 避免错误累积导致的连环重复
+                    condition_on_previous_text=False
                 )
             segments, info = await asyncio.to_thread(_do_transcribe)
             
             detected_language = info.language
+            self.last_detected_language = detected_language  # 保存检测到的语言
             logger.info(f"检测到的语言: {detected_language}")
             logger.info(f"语言检测概率: {info.language_probability:.2f}")
             
@@ -123,3 +136,27 @@ class Transcriber:
             "zh", "en", "ja", "ko", "es", "fr", "de", "it", "pt", "ru",
             "ar", "hi", "th", "vi", "tr", "pl", "nl", "sv", "da", "no"
         ]
+    
+    def get_detected_language(self, transcript_text: Optional[str] = None) -> Optional[str]:
+        """
+        获取检测到的语言
+        
+        Args:
+            transcript_text: 转录文本（可选，用于从文本中提取语言信息）
+            
+        Returns:
+            检测到的语言代码
+        """
+        # 如果有保存的语言，直接返回
+        if self.last_detected_language:
+            return self.last_detected_language
+        
+        # 如果提供了转录文本，尝试从中提取语言信息
+        if transcript_text and "**检测语言:**" in transcript_text:
+            lines = transcript_text.split('\n')
+            for line in lines:
+                if "**检测语言:**" in line:
+                    lang = line.split(":")[-1].strip()
+                    return lang
+        
+        return None

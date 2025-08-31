@@ -4,7 +4,7 @@
 
 中文 | [English](README.md)
 
-免费AI视频转录和摘要工具，支持YouTube、Bilibili、抖音等30+平台。
+一款开源的AI视频转录和摘要工具，支持YouTube、Bilibili、抖音等30+平台。
 
 ![Interface](cn-video.png)
 
@@ -161,11 +161,7 @@ A: 系统可以处理任意长度的视频，但处理时间会相应增加。�
 2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
 3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启Pull Request
-
-## 📄 许可证
-
-本项目采用MIT许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
+5. 开启Pull Request 
 
 ## 致谢
 

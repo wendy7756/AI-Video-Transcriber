@@ -46,6 +46,10 @@ chmod +x install.sh
 
 1. **Install Python Dependencies**
 ```bash
+# macOS (PEP 668) strongly recommends using a virtualenv
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
@@ -61,11 +65,12 @@ sudo apt update && sudo apt install ffmpeg
 sudo yum install ffmpeg
 ```
 
-3. **Configure Environment Variables** (Optional)
+3. **Configure Environment Variables**
 ```bash
-# Configure OpenAI API key to enable intelligent summaries
-export OPENAI_API_KEY=your_api_key_here
-```
+# Required for AI summary/translation features
+export OPENAI_API_KEY="your_api_key_here"
+
+# Optional: only if you use a custom OpenAI-compatible gateway
 
 ### Start the Service
 
@@ -84,6 +89,15 @@ python3 start.py --prod
 ```
 
 This keeps the SSE connection stable throughout long tasks (30–60+ min).
+
+#### Run with explicit env (example)
+
+```bash
+source .venv/bin/activate
+export OPENAI_API_KEY=your_api_key_here
+# export OPENAI_BASE_URL=https://oneapi.basevec.com/v1   # if using a custom endpoint
+python3 start.py --prod
+```
 
 ## 📖 Usage Guide
 
@@ -136,10 +150,11 @@ AI-Video-Transcriber/
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `OPENAI_API_KEY` | OpenAI API key | - | No |
+| `OPENAI_API_KEY` | OpenAI API key | - | Yes (for AI features) |
 | `HOST` | Server address | `0.0.0.0` | No |
 | `PORT` | Server port | `8000` | No |
 | `WHISPER_MODEL_SIZE` | Whisper model size | `base` | No |
+| `OPENAI_BASE_URL` | Custom OpenAI-compatible endpoint | `https://api.openai.com/v1` | No |
 
 ### Whisper Model Size Options
 
@@ -161,6 +176,15 @@ A: All platforms supported by yt-dlp, including but not limited to: YouTube, Tik
 
 ### Q: What if the AI optimization features are unavailable?
 A: Both transcript optimization and summary generation require an OpenAI API key. Without it, the system provides the raw transcript from Whisper and a simplified summary.
+
+### Q: I get HTTP 500 errors when starting/using the service. Why?
+A: In most cases this is an environment configuration issue rather than a code bug. Please check:
+- Ensure a virtualenv is activated: `source .venv/bin/activate`
+- Install deps inside the venv: `pip install -r requirements.txt`
+- Set `OPENAI_API_KEY` (required for summary/translation)
+- If using a custom gateway, set `OPENAI_BASE_URL` correctly and ensure network access
+- Install FFmpeg: `brew install ffmpeg` (macOS) / `sudo apt install ffmpeg` (Debian/Ubuntu)
+- If port 8000 is occupied, stop the old process or change `PORT`
 
 ### Q: How to handle long videos?
 A: The system can process videos of any length, but processing time will increase accordingly. For very long videos, consider using smaller Whisper models.

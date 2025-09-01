@@ -757,7 +757,7 @@ class Summarizer:
 重新分段后的文本："""
 
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -822,21 +822,21 @@ class Summarizer:
         """
         整理单个文本块的段落
         """
-        system_prompt = f"""你是{lang_instruction}段落整理专家。按语义重新组织段落，确保每段不超过200词。
+        system_prompt = f"""You are a {lang_instruction} paragraph organization expert. Reorganize paragraphs by semantics, ensuring each paragraph does not exceed 200 words.
 
-核心要求：
-1. 严格保持{lang_instruction}原语言
-2. 按语义逻辑分段，每段一个主题
-3. 每段绝不超过250词
-4. 段落间空行分隔
-5. 保持内容完整，不删减信息"""
+Core requirements:
+1. Strictly maintain the original {lang_instruction} language
+2. Organize by semantic logic, one theme per paragraph
+3. Each paragraph must not exceed 250 words
+4. Separate paragraphs with blank lines
+5. Keep content complete, do not reduce information"""
 
-        user_prompt = f"""重新分段以下文本，确保每段不超过200词：
+        user_prompt = f"""Re-paragraph the following text in {lang_instruction}, ensuring each paragraph does not exceed 200 words:
 
 {text}"""
 
         response = self.client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -972,30 +972,44 @@ class Summarizer:
         # 获取目标语言名称
         language_name = self.language_map.get(target_language, "中文（简体）")
         
-        # 构建提示词（放宽格式，允许自然段或少量条目；强调覆盖度与篇幅）
-        system_prompt = f"""你是资深内容编辑。请用{language_name}对全文进行高质量总结，不强制使用小标题或固定结构；以自然段为主，必要时可用少量条目。
+        # 构建英文提示词，适用于所有目标语言
+        system_prompt = f"""You are a professional content analyst. Please generate a comprehensive, well-structured summary in {language_name} for the following text.
 
-目标：
-- 全面覆盖核心观点、关键论证、重要例子/数据、关键结论/启示、可执行建议（如有）。
-- 忠实原文，不臆造；逻辑清楚、语言自然；避免逐句复述；适度去重但不遗漏信息。
-- 保持信息密度与可读性的平衡。
-- 篇幅建议：不少于600字，必要时可达1200字。"""
+Summary Requirements:
+1. Extract the main topics and core viewpoints from the text
+2. Maintain clear logical structure, highlighting the core arguments
+3. Include important discussions, viewpoints, and conclusions
+4. Use concise and clear language
+5. Appropriately preserve the speaker's expression style and key opinions
 
-        user_prompt = f"""请基于以下内容，写出一篇信息全面、结构清晰、篇幅充足的{language_name}总结：
+Paragraph Organization Requirements (Core):
+1. **Organize by semantic and logical themes** - Start a new paragraph whenever the topic shifts, discussion focus changes, or when transitioning from one viewpoint to another
+2. **Each paragraph should focus on one main point or theme**
+3. **Paragraphs must be separated by blank lines (double line breaks \\n\\n)**
+4. **Consider the logical flow of content and reasonably divide paragraph boundaries**
+
+Format Requirements:
+1. Use Markdown format with double line breaks between paragraphs
+2. Each paragraph should be a complete logical unit
+3. Write entirely in {language_name}
+4. Aim for substantial content (600-1200 words when appropriate)"""
+
+        user_prompt = f"""Based on the following content, write a comprehensive, well-structured summary in {language_name}:
 
 {transcript}
 
-要求：
-- 自然段为主，可辅以少量条目；不使用装饰性小标题或格式；
-- 覆盖全文关键思想与论据，保留重要例子或数据；
-- 关注前半段与后半段的均衡覆盖；
-- 语言克制但内容充分，篇幅不少于600字。"""
+Requirements:
+- Focus on natural paragraphs, avoiding decorative headings
+- Cover all key ideas and arguments, preserving important examples and data
+- Ensure balanced coverage of both early and later content
+- Use restrained but comprehensive language
+- Organize content logically with proper paragraph breaks"""
 
         logger.info(f"正在生成{language_name}摘要...")
         
         # 调用OpenAI API
         response = self.client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -1006,9 +1020,7 @@ class Summarizer:
         
         summary = response.choices[0].message.content
 
-        # 轻度润色后再返回
-        polished = await self._polish_summary(summary, target_language)
-        return self._format_summary_with_meta(polished, target_language, video_title)
+        return self._format_summary_with_meta(summary, target_language, video_title)
 
     async def _summarize_with_chunks(self, transcript: str, target_language: str, video_title: str, max_tokens: int) -> str:
         """
@@ -1026,21 +1038,21 @@ class Summarizer:
         for i, chunk in enumerate(chunks):
             logger.info(f"正在摘要第 {i+1}/{len(chunks)} 块...")
             
-            system_prompt = f"""你是摘要专家。请为该分块写一段高密度小结（{language_name}）。
+            system_prompt = f"""You are a summarization expert. Please write a high-density summary for this text chunk in {language_name}.
 
-这是完整内容的第{i+1}部分，共{len(chunks)}部分（编号：Part {i+1}/{len(chunks)}）。
+This is part {i+1} of {len(chunks)} of the complete content (Part {i+1}/{len(chunks)}).
 
-输出偏好：自然段为主，必要时可用极少量条目；突出新增信息及其与主线的关系；避免空泛复述与格式化标题；篇幅适中（建议120-220字）。"""
+Output preferences: Focus on natural paragraphs, use minimal bullet points if necessary; highlight new information and its relationship to the main narrative; avoid vague repetition and formatted headings; moderate length (suggested 120-220 words)."""
 
-            user_prompt = f"""[Part {i+1}/{len(chunks)}] 概括以下文本的要点（自然段为主，可少量条目，120-220字）：
+            user_prompt = f"""[Part {i+1}/{len(chunks)}] Summarize the key points of the following text in {language_name} (natural paragraphs preferred, minimal bullet points, 120-220 words):
 
 {chunk}
 
-请避免使用任何小标题或装饰性分隔，只输出内容。"""
+Avoid using any subheadings or decorative separators, output content only."""
 
             try:
                 response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
@@ -1067,9 +1079,7 @@ class Summarizer:
         else:
             final_summary = await self._integrate_chunk_summaries(combined_summaries, target_language)
 
-        # 轻度润色后再返回
-        polished = await self._polish_summary(final_summary, target_language)
-        return self._format_summary_with_meta(polished, target_language, video_title)
+        return self._format_summary_with_meta(final_summary, target_language, video_title)
 
     def _smart_chunk_text(self, text: str, max_chars_per_chunk: int = 3500) -> list:
         """智能分块（先段落后句子），按字符上限切分。"""
@@ -1113,18 +1123,31 @@ class Summarizer:
         language_name = self.language_map.get(target_language, "中文（简体）")
         
         try:
-            system_prompt = f"""你是内容整合专家。请把多段“编号摘要（Part 1..N）”整合为一篇流畅连贯且覆盖充分的{language_name}总结。
+            system_prompt = f"""You are a content integration expert. Please integrate multiple segmented summaries into a complete, coherent summary in {language_name}.
 
-必须按编号顺序覆盖所有部分，不得跳过前半段；合并相近要点、消除重复与冲突；允许自然段或少量条目，但不要使用小标题；篇幅建议800-1500字，保证论点与论据充分。"""
+Integration Requirements:
+1. Remove duplicate content and maintain clear logic
+2. Reorganize content by themes or chronological order
+3. Each paragraph must be separated by double line breaks
+4. Ensure output is in Markdown format with double line breaks between paragraphs
+5. Use concise and clear language
+6. Form a complete content summary
+7. Cover all parts comprehensively without omission"""
 
-            user_prompt = f"""将以下分段摘要整合为一篇完整总结（自然段为主，可少量条目；不使用小标题；800-1500字）：
+            user_prompt = f"""Please integrate the following segmented summaries into a complete, coherent summary in {language_name}:
 
 {combined_summaries}
 
-请确保覆盖所有Part的关键信息，语言自然、信息密度高，只输出总结正文。"""
+Requirements:
+- Remove duplicate content and maintain clear logic
+- Reorganize content by themes or chronological order
+- Each paragraph must be separated by double line breaks
+- Ensure output is in Markdown format with double line breaks between paragraphs
+- Use concise and clear language
+- Form a complete content summary"""
 
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -1154,29 +1177,14 @@ class Summarizer:
             prefix = ""
         return prefix + summary
 
-    async def _polish_summary(self, text: str, target_language: str) -> str:
-        """对已生成的总结做轻度润色：去重、顺序更自然、措辞更简洁，不新增事实。"""
-        if not self.client:
-            return text
-        language_name = self.language_map.get(target_language, "中文（简体）")
-        system_prompt = f"""你是资深编辑。用{language_name}对给定总结做轻度润色：
-- 不改变事实与结论，不新增内容；
-- 去除重复、口语化与冗余；
-- 顺序更自然，措辞更简洁；
-- 不添加小标题或装饰性格式。"""
-        user_prompt = f"""润色以下总结，使其更流畅、紧凑：
-
-{text}
-
-只返回润色后的正文。"""
         try:
             resp = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                max_tokens=800,
+                max_tokens=1200,
                 temperature=0.2,
             )
             return resp.choices[0].message.content

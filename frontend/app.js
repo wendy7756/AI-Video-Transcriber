@@ -27,7 +27,7 @@ class VideoTranscriber {
                 start_transcription: "Start",
                 processing_progress: "Processing Progress",
                 preparing: "Preparing...",
-                transcription_results: "Transcription Results",
+                transcription_results: "Results",
                 download_transcript: "Download Transcript",
                 download_summary: "Download Summary",
                 transcript_text: "Transcript Text",

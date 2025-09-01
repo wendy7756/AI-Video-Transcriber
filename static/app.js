@@ -27,7 +27,7 @@ class VideoTranscriber {
                 start_transcription: "Start",
                 processing_progress: "Processing Progress",
                 preparing: "Preparing...",
-                transcription_results: "Transcription Results",
+                transcription_results: "Results",
                 download_transcript: "Download Transcript",
                 download_translation: "Download Translation",
                 download_summary: "Download Summary",
@@ -685,33 +685,52 @@ class VideoTranscriber {
         }
         
         try {
-            const response = await fetch(`${this.apiBase}/download/${this.currentTaskId}/${fileType}`);
-            
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || '下载失败');
+            // 首先获取任务状态，获得实际文件名
+            const taskResponse = await fetch(`${this.apiBase}/task-status/${this.currentTaskId}`);
+            if (!taskResponse.ok) {
+                throw new Error('获取任务状态失败');
             }
             
-            // 获取文件名
-            const contentDisposition = response.headers.get('content-disposition');
-            let filename = `${fileType}.md`;
-            if (contentDisposition) {
-                const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
-                if (filenameMatch) {
-                    filename = filenameMatch[1];
-                }
+            const taskData = await taskResponse.json();
+            let filename;
+            
+            // 根据文件类型获取对应的文件名
+            switch(fileType) {
+                case 'script':
+                    if (taskData.script_path) {
+                        filename = taskData.script_path.split('/').pop(); // 获取文件名部分
+                    } else {
+                        filename = `transcript_${taskData.safe_title || 'untitled'}_${taskData.short_id || 'unknown'}.md`;
+                    }
+                    break;
+                case 'summary':
+                    if (taskData.summary_path) {
+                        filename = taskData.summary_path.split('/').pop();
+                    } else {
+                        filename = `summary_${taskData.safe_title || 'untitled'}_${taskData.short_id || 'unknown'}.md`;
+                    }
+                    break;
+                case 'translation':
+                    if (taskData.translation_path) {
+                        filename = taskData.translation_path.split('/').pop();
+                    } else if (taskData.translation_filename) {
+                        filename = taskData.translation_filename;
+                    } else {
+                        filename = `translation_${taskData.safe_title || 'untitled'}_${taskData.short_id || 'unknown'}.md`;
+                    }
+                    break;
+                default:
+                    throw new Error('未知的文件类型');
             }
             
-            // 下载文件
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
+            // 使用简单直接的下载方式
+            const encodedFilename = encodeURIComponent(filename);
+            const link = document.createElement('a');
+            link.href = `${this.apiBase}/download/${encodedFilename}`;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
             
         } catch (error) {
             console.error('下载文件失败:', error);

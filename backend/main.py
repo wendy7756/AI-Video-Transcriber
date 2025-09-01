@@ -439,92 +439,35 @@ async def task_stream(task_id: str):
         }
     )
 
-@app.get("/api/download/{task_id}/{file_type}")
-async def download_file(task_id: str, file_type: str):
+@app.get("/api/download/{filename}")
+async def download_file(filename: str):
     """
-    下载文件 (script 或 summary)
+    直接从temp目录下载文件（简化方案）
     """
-    if task_id not in tasks:
-        raise HTTPException(status_code=404, detail="任务不存在")
-    
-    task = tasks[task_id]
-    if task["status"] != "completed":
-        raise HTTPException(status_code=400, detail="任务尚未完成")
-    
-    if file_type == "script":
-        # 优先使用已保存的文件，fallback到内存内容
-        script_path = task.get("script_path")
-        if script_path and Path(script_path).exists():
-            return FileResponse(
-                script_path,
-                filename=Path(script_path).name,
-                media_type="text/markdown"
-            )
-        else:
-            # Fallback: 从内存创建临时文件
-            content = task["script"]
-            short_id = task.get("short_id", task_id.replace("-", "")[:6])
-            safe_title = task.get("safe_title", "untitled")
-            filename = f"transcript_{safe_title}_{short_id}.md"
-    elif file_type == "summary":
-        # 优先使用已保存的文件，fallback到内存内容
-        summary_path = task.get("summary_path")
-        if summary_path and Path(summary_path).exists():
-            return FileResponse(
-                summary_path,
-                filename=Path(summary_path).name,
-                media_type="text/markdown"
-            )
-        else:
-            # Fallback: 从内存创建临时文件
-            content = task["summary"]
-            short_id = task.get("short_id", task_id.replace("-", "")[:6])
-            safe_title = task.get("safe_title", "untitled")
-            filename = f"summary_{safe_title}_{short_id}.md"
-    elif file_type == "translation":
-        # 翻译文件
-        translation_path = task.get("translation_path")
-        if translation_path and Path(translation_path).exists():
-            return FileResponse(
-                translation_path,
-                filename=Path(translation_path).name,
-                media_type="text/markdown"
-            )
-        else:
-            # 如果没有翻译文件，返回404
-            raise HTTPException(status_code=404, detail="翻译文件不存在")
-    elif file_type == "raw_script":
-        # 原始Whisper转录直接从已保存的Markdown文件返回
-        raw_name = task.get("raw_script_file")
-        if not raw_name:
-            short_id = task.get("short_id", task_id.replace("-", "")[:6])
-            safe_title = task.get("safe_title", "untitled")
-            raw_name = f"raw_{safe_title}_{short_id}.md"
-        raw_path = TEMP_DIR / raw_name
-        if not raw_path.exists():
-            raise HTTPException(status_code=404, detail="原始转录文件不存在")
+    try:
+        # 检查文件扩展名安全性
+        if not filename.endswith('.md'):
+            raise HTTPException(status_code=400, detail="仅支持下载.md文件")
+        
+        # 检查文件名格式（防止路径遍历攻击）
+        if '..' in filename or '/' in filename or '\\' in filename:
+            raise HTTPException(status_code=400, detail="文件名格式无效")
+            
+        file_path = TEMP_DIR / filename
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="文件不存在")
+            
         return FileResponse(
-            raw_path,
-            filename=raw_name,
+            file_path,
+            filename=filename,
             media_type="text/markdown"
         )
-    else:
-        raise HTTPException(status_code=400, detail="无效的文件类型")
-    
-    # 如果到这里，说明需要从内存创建临时文件（fallback情况）
-    if not content:
-        raise HTTPException(status_code=404, detail="文件不存在")
-    
-    # 创建临时文件
-    temp_file = TEMP_DIR / filename
-    with open(temp_file, "w", encoding="utf-8") as f:
-        f.write(content)
-    
-    return FileResponse(
-        temp_file,
-        filename=filename,
-        media_type="text/markdown"
-    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"下载文件失败: {e}")
+        raise HTTPException(status_code=500, detail=f"下载失败: {str(e)}")
+
 
 @app.delete("/api/task/{task_id}")
 async def delete_task(task_id: str):

@@ -43,8 +43,12 @@ chmod +x install.sh
 
 #### 方法二：手动安装
 
-1. **安装Python依赖**
+1. **安装Python依赖**（建议使用虚拟环境）
 ```bash
+# 创建并启用虚拟环境（macOS推荐，避免 PEP 668 系统限制）
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
@@ -60,10 +64,12 @@ sudo apt update && sudo apt install ffmpeg
 sudo yum install ffmpeg
 ```
 
-3. **配置环境变量**（可选）
+3. **配置环境变量**（摘要/翻译功能需要）
 ```bash
-# 配置OpenAI API密钥以启用智能摘要
-export OPENAI_API_KEY=your_api_key_here
+# 必需：启用智能摘要/翻译
+export OPENAI_API_KEY="你的_API_Key"
+
+# 可选：如使用自建/代理的OpenAI兼容网关，按需设置
 ```
 
 ### 启动服务
@@ -73,6 +79,15 @@ python3 start.py
 ```
 
 服务启动后，打开浏览器访问 `http://localhost:8000`
+
+#### 使用显式环境变量启动（示例）
+
+```bash
+source .venv/bin/activate
+export OPENAI_API_KEY=你的_API_Key
+# export OPENAI_BASE_URL=https://oneapi.basevec.com/v1  # 如使用自定义端点
+python3 start.py --prod
+```
 
 ## 📖 使用指南
 
@@ -149,6 +164,15 @@ A: 支持所有yt-dlp支持的平台，包括但不限于：YouTube、抖音、B
 
 ### Q: AI优化功能不可用怎么办？
 A: 转录优化和摘要生成都需要OpenAI API密钥。如果未配置，系统会提供Whisper的原始转录和简化版摘要。
+
+### Q: 出现 500 报错/白屏，是代码问题吗？
+A: 多数情况下是环境配置问题，请按以下清单排查：
+- 是否已激活虚拟环境：`source .venv/bin/activate`
+- 依赖是否安装在虚拟环境中：`pip install -r requirements.txt`
+- 是否设置 `OPENAI_API_KEY`（启用摘要/翻译所必需）
+- 如使用自定义网关，`OPENAI_BASE_URL` 是否正确、网络可达
+- 是否已安装 FFmpeg：macOS `brew install ffmpeg` / Debian/Ubuntu `sudo apt install ffmpeg`
+- 8000 端口是否被占用；如被占用请关闭旧进程或更换端口
 
 ### Q: 如何处理长视频？
 A: 系统可以处理任意长度的视频，但处理时间会相应增加。建议对于超长视频使用较小的Whisper模型。

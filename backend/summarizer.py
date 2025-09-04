@@ -106,7 +106,7 @@ class Summarizer:
         
         system_prompt = f"""你是一个专业的文本编辑专家。请对提供的视频转录文本进行优化处理。
 
-特别注意：视频转录中经常出现完整句子被时间戳拆分的情况，需要重新组合。
+特别注意：这可能是访谈、对话或演讲，如果包含多个说话者，必须保持每个说话者的原始视角。
 
 要求：
 1. **严格保持原始语言({lang_instruction})，绝对不要翻译成其他语言**
@@ -115,8 +115,11 @@ class Summarizer:
 4. 修正明显的错别字和语法错误
 5. 将重组后的完整句子按照语义和逻辑含义分成自然的段落
 6. 段落之间用空行分隔
-7. 保持原意不变，不要添加或删除实际内容
-8. 确保每个句子语法完整，语言流畅自然
+7. **严格保持原意不变，不要添加或删除实际内容**
+8. **绝对不要改变人称代词（如I/我、you/你、he/他、she/她等）**
+9. **保持每个说话者的原始视角和语境**
+10. **识别对话结构：访谈者用"you"，被访者用"I/we"，绝不混淆**
+11. 确保每个句子语法完整，语言流畅自然
 
 处理策略：
 - 优先识别不完整的句子片段（如以介词、连词、形容词结尾）
@@ -125,9 +128,10 @@ class Summarizer:
 - 按主题和逻辑重新分段
 
 分段要求：
-- 每当话题转换时创建新段落
-- 当一个想法或观点完整表达后分段
-- 避免超长段落（每段不要超过250词）
+- 按主题和逻辑含义分段，每段包含1-8个相关句子
+- 单段长度不超过400字符
+- 避免过多的短段落，合并相关内容
+- 当一个完整想法或观点表达后分段
 
 输出格式：
 - 纯文本段落，无时间戳或格式标记
@@ -135,7 +139,9 @@ class Summarizer:
 - 每个段落讨论一个主要话题
 - 段落之间用空行分隔
 
-重要提醒：这是{lang_instruction}内容，请完全用{lang_instruction}进行优化，重点解决句子被时间戳拆分导致的不连贯问题！务必进行合理的分段，避免出现超长段落！"""
+重要提醒：这是{lang_instruction}内容，请完全用{lang_instruction}进行优化，重点解决句子被时间戳拆分导致的不连贯问题！务必进行合理的分段，避免出现超长段落！
+
+**关键要求：这可能是访谈对话，绝对不要改变任何人称代词或说话者视角！访谈者说"you"，被访者说"I/we"，必须严格保持！**"""
 
         user_prompt = f"""请将以下{lang_instruction}视频转录文本优化为流畅的段落文本：
 
@@ -149,8 +155,9 @@ class Summarizer:
 5. 保持{lang_instruction}语言不变
 
 分段指导：
-- 当话题转换时必须分段
-- 避免一个段落超过250个单词
+- 按主题和逻辑含义分段，每段包含1-8个相关句子
+- 单段长度不超过400字符
+- 避免过多的短段落，合并相关内容
 - 确保段落之间有明确的空行
 
 请特别注意修复因时间戳分割导致的句子不完整问题，并进行合理的段落划分！"""
@@ -258,15 +265,19 @@ class Summarizer:
                 "**内容优化（正确性优先）：**\n"
                 "1. 错误修正（转录错误/错别字/同音字/专有名词）\n"
                 "2. 适度改善语法，补全不完整句子，保持原意和语言不变\n"
-                "3. 口语处理：保留自然口语与重复表达，不要删减内容，仅添加必要标点\n\n"
+                "3. 口语处理：保留自然口语与重复表达，不要删减内容，仅添加必要标点\n"
+                "4. **绝对不要改变人称代词（I/我、you/你等）和说话者视角**\n\n"
                 "**分段规则：**\n"
-                "- 话题/环节/说话人变化时分段；单段不超过250字符\n\n"
+                "- 按主题和逻辑含义分段，每段包含1-8个相关句子\n"
+                "- 单段长度不超过400字符\n"
+                "- 避免过多的短段落，合并相关内容\n\n"
                 "**格式要求：**Markdown 段落，段落间空行\n\n"
                 f"原始转录文本：\n{chunk_text}"
             )
             system_prompt = (
                 "你是专业的音频转录文本优化助手，修正错误、改善通顺度和排版格式，"
                 "必须保持原意，不得删减口语/重复/细节；仅移除时间戳或元信息。"
+                "绝对不要改变人称代词或说话者视角。这可能是访谈对话，访谈者用'you'，被访者用'I/we'。"
             )
         else:
             prompt = (
@@ -274,14 +285,16 @@ class Summarizer:
                 "Content Optimization (Accuracy First):\n"
                 "1. Error Correction (typos, homophones, proper nouns)\n"
                 "2. Moderate grammar improvement, complete incomplete sentences, keep original language/meaning\n"
-                "3. Speech processing: keep natural fillers and repetitions, do NOT remove content; only add punctuation if needed\n\n"
-                "Segmentation Rules: split on topic/section/speaker change; each paragraph must NOT exceed 250 characters\n\n"
+                "3. Speech processing: keep natural fillers and repetitions, do NOT remove content; only add punctuation if needed\n"
+                "4. **NEVER change pronouns (I, you, he, she, etc.) or speaker perspective**\n\n"
+                "Segmentation Rules: Group 1-8 related sentences per paragraph by topic/logic; paragraph length NOT exceed 400 characters; avoid too many short paragraphs\n\n"
                 "Format: Markdown paragraphs with blank lines between paragraphs\n\n"
                 f"Original transcript text:\n{chunk_text}"
             )
             system_prompt = (
                 "You are a professional transcript formatting assistant. Fix errors and improve fluency "
-                "without changing meaning or removing any content; only timestamps/meta may be removed; keep Markdown paragraphs with blank lines."
+                "without changing meaning or removing any content; only timestamps/meta may be removed; keep Markdown paragraphs with blank lines. "
+                "NEVER change pronouns or speaker perspective. This may be an interview: interviewer uses 'you', interviewee uses 'I/we'."
             )
 
         try:
@@ -297,7 +310,7 @@ class Summarizer:
             optimized_text = response.choices[0].message.content or ""
             # 移除诸如 "# Transcript" / "## Transcript" 等标题
             optimized_text = self._remove_transcript_heading(optimized_text)
-            enforced = self._enforce_paragraph_max_chars(optimized_text.strip(), max_chars=250)
+            enforced = self._enforce_paragraph_max_chars(optimized_text.strip(), max_chars=400)
             return self._ensure_markdown_paragraphs(enforced)
         except Exception as e:
             logger.error(f"单块文本优化失败: {e}")
@@ -383,11 +396,23 @@ class Summarizer:
             sentences.append(current.strip())
         paras = []
         cur = ""
+        sentence_count = 0
         for s in sentences:
             candidate = (cur + " " + s).strip() if cur else s
-            if len(candidate) > 250 and cur:
+            sentence_count += 1
+            # 改进的分段逻辑：考虑句子数量和长度
+            should_break = False
+            if len(candidate) > 400 and cur:  # 段落过长
+                should_break = True
+            elif len(candidate) > 200 and sentence_count >= 3:  # 中等长度且句子数足够
+                should_break = True
+            elif sentence_count >= 6:  # 句子数过多
+                should_break = True
+            
+            if should_break:
                 paras.append(cur.strip())
                 cur = s
+                sentence_count = 1
             else:
                 cur = candidate
         if cur.strip():
@@ -466,7 +491,7 @@ class Summarizer:
 
         merged = "\n\n".join(deduped)
         merged = self._remove_transcript_heading(merged)
-        enforced = self._enforce_paragraph_max_chars(merged, max_chars=250)
+        enforced = self._enforce_paragraph_max_chars(merged, max_chars=400)
         return self._ensure_markdown_paragraphs(enforced)
 
     def _remove_timestamps_and_meta(self, text: str) -> str:
@@ -488,7 +513,7 @@ class Summarizer:
         cleaned = '\n'.join(kept)
         return cleaned
 
-    def _enforce_paragraph_max_chars(self, text: str, max_chars: int = 250) -> str:
+    def _enforce_paragraph_max_chars(self, text: str, max_chars: int = 400) -> str:
         """按段落拆分并确保每段不超过max_chars，必要时按句子边界拆为多段。"""
         if not text:
             return text

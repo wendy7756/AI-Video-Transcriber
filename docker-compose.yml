@@ -1,0 +1,27 @@
+services:
+  ai-video-transcriber:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # 必需：OpenAI API密钥（请在.env文件中设置或直接修改）
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_api_key_here}
+      # 可选：自定义OpenAI端点
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      # 可选：Whisper模型大小
+      - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-base}
+      # 服务器配置
+      - HOST=0.0.0.0
+      - PORT=8000
+    # volumes:
+      # 挂载临时文件目录，便于查看和管理下载的文件  
+      # - ./temp:/app/temp
+    restart: unless-stopped
+    
+    # 资源限制（可选）
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G

@@ -119,7 +119,7 @@ def _sanitize_title_for_filename(title: str) -> str:
 @app.get("/")
 async def read_root():
     """返回前端页面"""
-    return FileResponse(str(PROJECT_ROOT / "frontend" / "index.html"))
+    return FileResponse(str(PROJECT_ROOT / "static" / "index.html"))
 
 @app.post("/api/process-video")
 async def process_video(

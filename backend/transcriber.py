@@ -81,12 +81,12 @@ class Transcriber:
             
             # 组装转录结果
             transcript_lines = []
-            transcript_lines.append("# 视频转录")
+            transcript_lines.append("# Video Transcription")
             transcript_lines.append("")
-            transcript_lines.append(f"**检测语言:** {detected_language}")
-            transcript_lines.append(f"**语言概率:** {info.language_probability:.2f}")
+            transcript_lines.append(f"**Detected Language:** {detected_language}")
+            transcript_lines.append(f"**Language Probability:** {info.language_probability:.2f}")
             transcript_lines.append("")
-            transcript_lines.append("## 转录内容")
+            transcript_lines.append("## Transcription Content")
             transcript_lines.append("")
             
             # 添加时间戳和文本
@@ -152,10 +152,10 @@ class Transcriber:
             return self.last_detected_language
         
         # 如果提供了转录文本，尝试从中提取语言信息
-        if transcript_text and "**检测语言:**" in transcript_text:
+        if transcript_text and "**Detected Language:**" in transcript_text:
             lines = transcript_text.split('\n')
             for line in lines:
-                if "**检测语言:**" in line:
+                if "**Detected Language:**" in line:
                     lang = line.split(":")[-1].strip()
                     return lang
         

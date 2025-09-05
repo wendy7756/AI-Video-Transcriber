@@ -29,11 +29,28 @@
 
 ### 安装方法
 
-#### 方法一：自动安装（推荐）
+#### 方法一：Docker部署（推荐）
 
 ```bash
 # 克隆项目
-git clone https://github.com/your-username/AI-Video-Transcriber.git
+git clone https://github.com/wendy7756/AI-Video-Transcriber.git
+cd AI-Video-Transcriber
+
+# 使用Docker Compose（最简单）
+cp .env.example .env
+# 编辑.env文件，设置你的OPENAI_API_KEY
+docker-compose up -d
+
+# 或者直接使用Docker
+docker build -t ai-video-transcriber .
+docker run -p 8000:8000 -e OPENAI_API_KEY="你的API密钥" ai-video-transcriber
+```
+
+#### 方法二：自动安装
+
+```bash
+# 克隆项目
+git clone https://github.com/wendy7756/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 
 # 运行安装脚本
@@ -41,7 +58,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-#### 方法二：手动安装
+#### 方法三：手动安装
 
 1. **安装Python依赖**（建议使用虚拟环境）
 ```bash
@@ -123,14 +140,26 @@ AI-Video-Transcriber/
 │   ├── main.py             # FastAPI主应用
 │   ├── video_processor.py  # 视频处理模块
 │   ├── transcriber.py      # 转录模块
-│   └── summarizer.py       # 摘要模块
-├── frontend/               # 前端代码
+│   ├── summarizer.py       # 摘要模块
+│   └── translator.py       # 翻译模块
+├── static/                 # 前端文件
 │   ├── index.html          # 主页面
 │   └── app.js              # 前端逻辑
 ├── temp/                   # 临时文件目录
-├── requirements.txt        # Python依赖
-├── start.py               # 启动脚本
-└── README.md              # 项目文档
+├── Docker相关文件           # Docker部署
+│   ├── Dockerfile          # Docker镜像配置
+│   ├── docker-compose.yml  # Docker Compose配置
+│   └── .dockerignore       # Docker忽略规则
+├── 配置文件
+│   ├── .env.example        # 环境变量模板
+│   ├── requirements.txt    # Python依赖
+│   └── start.py           # 启动脚本
+├── 项目文档
+│   ├── README.md          # 英文文档
+│   └── README_ZH.md       # 中文文档
+└── 资源文件
+    ├── cn-video.png       # 中文界面截图
+    └── en-video.png       # 英文界面截图
 ```
 
 ## ⚙️ 配置选项
@@ -176,6 +205,81 @@ A: 多数情况下是环境配置问题，请按以下清单排查：
 
 ### Q: 如何处理长视频？
 A: 系统可以处理任意长度的视频，但处理时间会相应增加。建议对于超长视频使用较小的Whisper模型。
+
+### Q: 如何使用Docker部署？
+A: Docker提供了最简单的部署方式：
+
+**前置条件：**
+- 从 https://www.docker.com/products/docker-desktop/ 安装Docker Desktop
+- 确保Docker服务正在运行
+
+**快速开始：**
+```bash
+# 克隆和配置
+git clone https://github.com/wendy7756/AI-Video-Transcriber.git
+cd AI-Video-Transcriber
+cp .env.example .env
+# 编辑.env文件设置你的OPENAI_API_KEY
+
+# 使用Docker Compose启动（推荐）
+docker-compose up -d
+
+# 或手动构建运行
+docker build -t ai-video-transcriber .
+docker run -p 8000:8000 --env-file .env ai-video-transcriber
+```
+
+**常见Docker问题：**
+- **端口冲突**：如果8000端口被占用，可改用 `-p 8001:8000`
+- **权限拒绝**：确保Docker Desktop正在运行且有适当权限
+- **构建失败**：检查磁盘空间（需要约2GB空闲空间）和网络连接
+- **容器无法启动**：验证.env文件存在且包含有效的OPENAI_API_KEY
+
+**Docker常用命令：**
+```bash
+# 查看运行中的容器
+docker ps
+
+# 检查容器日志
+docker logs ai-video-transcriber-ai-video-transcriber-1
+
+# 停止服务
+docker-compose down
+
+# 修改后重新构建
+docker-compose build --no-cache
+```
+
+### Q: 内存需求是多少？
+A: 内存使用量根据部署方式和工作负载而有所不同：
+
+**Docker部署：**
+- **基础内存**：空闲容器约128MB
+- **处理过程中**：根据视频长度和Whisper模型，需要500MB - 2GB
+- **Docker镜像大小**：约1.6GB磁盘空间
+- **推荐配置**：4GB+内存以确保流畅运行
+
+**传统部署：**
+- **基础内存**：FastAPI服务器约50-100MB
+- **Whisper模型内存占用**：
+  - `tiny`：约150MB
+  - `base`：约250MB
+  - `small`：约750MB
+  - `medium`：约1.5GB
+  - `large`：约3GB
+- **峰值使用**：基础 + 模型 + 视频处理（额外约500MB）
+
+**内存优化建议：**
+```bash
+# 使用更小的Whisper模型减少内存占用
+WHISPER_MODEL_SIZE=tiny  # 或 base
+
+# Docker部署时可限制容器内存
+docker run -m 1g -p 8000:8000 --env-file .env ai-video-transcriber
+
+# 监控内存使用情况
+docker stats ai-video-transcriber-ai-video-transcriber-1
+```
 
 ## 🤝 贡献指南
 

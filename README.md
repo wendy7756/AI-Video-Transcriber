@@ -30,11 +30,28 @@ An AI-powered video transcription and summarization tool that supports multiple 
 
 ### Installation
 
-#### Method 1: Automatic Installation (Recommended)
+#### Method 1: Docker (Recommended)
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/AI-Video-Transcriber.git
+git clone https://github.com/wendy7756/AI-Video-Transcriber.git
+cd AI-Video-Transcriber
+
+# Using Docker Compose (easiest)
+cp .env.example .env
+# Edit .env file and set your OPENAI_API_KEY
+docker-compose up -d
+
+# Or using Docker directly
+docker build -t ai-video-transcriber .
+docker run -p 8000:8000 -e OPENAI_API_KEY="your_api_key_here" ai-video-transcriber
+```
+
+#### Method 2: Automatic Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/wendy7756/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 
 # Run installation script
@@ -42,7 +59,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-#### Method 2: Manual Installation
+#### Method 3: Manual Installation
 
 1. **Install Python Dependencies**
 ```bash
@@ -134,11 +151,16 @@ AI-Video-Transcriber/
 │   ├── main.py             # FastAPI main application
 │   ├── video_processor.py  # Video processing module
 │   ├── transcriber.py      # Transcription module
-│   └── summarizer.py       # Summary module
-├── frontend/               # Frontend code
+│   ├── summarizer.py       # Summary module
+│   └── translator.py       # Translation module
+├── static/                 # Frontend files
 │   ├── index.html          # Main page
 │   └── app.js              # Frontend logic
 ├── temp/                   # Temporary files directory
+├── Dockerfile              # Docker image configuration
+├── docker-compose.yml      # Docker Compose configuration
+├── .dockerignore           # Docker ignore rules
+├── .env.example            # Environment variables template
 ├── requirements.txt        # Python dependencies
 ├── start.py               # Startup script
 └── README.md              # Project documentation
@@ -154,7 +176,6 @@ AI-Video-Transcriber/
 | `HOST` | Server address | `0.0.0.0` | No |
 | `PORT` | Server port | `8000` | No |
 | `WHISPER_MODEL_SIZE` | Whisper model size | `base` | No |
-| `OPENAI_BASE_URL` | Custom OpenAI-compatible endpoint | `https://api.openai.com/v1` | No |
 
 ### Whisper Model Size Options
 
@@ -188,6 +209,81 @@ A: In most cases this is an environment configuration issue rather than a code b
 
 ### Q: How to handle long videos?
 A: The system can process videos of any length, but processing time will increase accordingly. For very long videos, consider using smaller Whisper models.
+
+### Q: How to use Docker for deployment?
+A: Docker provides the easiest deployment method:
+
+**Prerequisites:**
+- Install Docker Desktop from https://www.docker.com/products/docker-desktop/
+- Ensure Docker service is running
+
+**Quick Start:**
+```bash
+# Clone and setup
+git clone https://github.com/wendy7756/AI-Video-Transcriber.git
+cd AI-Video-Transcriber
+cp .env.example .env
+# Edit .env file to set your OPENAI_API_KEY
+
+# Start with Docker Compose (recommended)
+docker-compose up -d
+
+# Or build and run manually
+docker build -t ai-video-transcriber .
+docker run -p 8000:8000 --env-file .env ai-video-transcriber
+```
+
+**Common Docker Issues:**
+- **Port conflict**: Change port mapping `-p 8001:8000` if 8000 is occupied
+- **Permission denied**: Ensure Docker Desktop is running and you have proper permissions
+- **Build fails**: Check disk space (need ~2GB free) and network connection
+- **Container won't start**: Verify .env file exists and contains valid OPENAI_API_KEY
+
+**Docker Commands:**
+```bash
+# View running containers
+docker ps
+
+# Check container logs
+docker logs ai-video-transcriber-ai-video-transcriber-1
+
+# Stop service
+docker-compose down
+
+# Rebuild after changes
+docker-compose build --no-cache
+```
+
+### Q: What are the memory requirements?
+A: Memory usage varies depending on the deployment method and workload:
+
+**Docker Deployment:**
+- **Base memory**: ~128MB for idle container
+- **During processing**: 500MB - 2GB depending on video length and Whisper model
+- **Docker image size**: ~1.6GB disk space required
+- **Recommended**: 4GB+ RAM for smooth operation
+
+**Traditional Deployment:**
+- **Base memory**: ~50-100MB for FastAPI server
+- **Whisper models memory usage**:
+  - `tiny`: ~150MB
+  - `base`: ~250MB  
+  - `small`: ~750MB
+  - `medium`: ~1.5GB
+  - `large`: ~3GB
+- **Peak usage**: Base + Model + Video processing (~500MB additional)
+
+**Memory Optimization Tips:**
+```bash
+# Use smaller Whisper model to reduce memory usage
+WHISPER_MODEL_SIZE=tiny  # or base
+
+# For Docker, limit container memory if needed
+docker run -m 1g -p 8000:8000 --env-file .env ai-video-transcriber
+
+# Monitor memory usage
+docker stats ai-video-transcriber-ai-video-transcriber-1
+```
 
 ## 🎯 Supported Languages
 

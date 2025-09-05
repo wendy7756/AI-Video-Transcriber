@@ -1,0 +1,40 @@
+# Git相关
+.git
+.gitignore
+
+# Python相关
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+.venv/
+venv/
+ENV/
+
+# 临时文件
+temp/
+*.tmp
+*.log
+
+# IDE相关
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 文档和图片（构建时不需要）
+*.md
+*.png
+*.jpg
+*.gif
+
+# Docker相关
+Dockerfile
+docker-compose.yml
+.dockerignore

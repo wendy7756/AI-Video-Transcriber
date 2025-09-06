@@ -30,7 +30,19 @@ An AI-powered video transcription and summarization tool that supports multiple 
 
 ### Installation
 
-#### Method 1: Docker (Recommended)
+#### Method 1: Automatic Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/wendy7756/AI-Video-Transcriber.git
+cd AI-Video-Transcriber
+
+# Run installation script
+chmod +x install.sh
+./install.sh
+```
+
+#### Method 2: Docker
 
 ```bash
 # Clone the repository
@@ -45,18 +57,6 @@ docker-compose up -d
 # Or using Docker directly
 docker build -t ai-video-transcriber .
 docker run -p 8000:8000 -e OPENAI_API_KEY="your_api_key_here" ai-video-transcriber
-```
-
-#### Method 2: Automatic Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/wendy7756/AI-Video-Transcriber.git
-cd AI-Video-Transcriber
-
-# Run installation script
-chmod +x install.sh
-./install.sh
 ```
 
 #### Method 3: Manual Installation
@@ -284,6 +284,33 @@ docker run -m 1g -p 8000:8000 --env-file .env ai-video-transcriber
 # Monitor memory usage
 docker stats ai-video-transcriber-ai-video-transcriber-1
 ```
+
+### Q: Network connection errors or timeouts?
+A: If you encounter network-related errors during video downloading or API calls, try these solutions:
+
+**Common Network Issues:**
+- Video download fails with "Unable to extract" or timeout errors
+- OpenAI API calls return connection timeout or DNS resolution failures
+- Docker image pull fails or is extremely slow
+
+**Solutions:**
+1. **Switch VPN/Proxy**: Try connecting to a different VPN server or switch your proxy settings
+2. **Check Network Stability**: Ensure your internet connection is stable
+3. **Retry After Network Change**: Wait 30-60 seconds after changing network settings before retrying
+4. **Use Alternative Endpoints**: If using custom OpenAI endpoints, verify they're accessible from your network
+5. **Docker Network Issues**: Restart Docker Desktop if container networking fails
+
+**Quick Network Test:**
+```bash
+# Test video platform access
+curl -I https://www.youtube.com/
+
+# Test OpenAI API access (replace with your endpoint)
+curl -I https://api.openai.com
+
+# Test Docker Hub access
+docker pull hello-world
+``
 
 ## 🎯 Supported Languages
 

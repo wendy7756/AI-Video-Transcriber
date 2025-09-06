@@ -399,9 +399,13 @@ class VideoTranscriber {
     
     updateProgressStage(progress, message) {
         // 根据进度和消息确定处理阶段
+        // 解析信息通常发生在长时间下载之前或期间，
+        // 若此时仅将目标设为25%，进度会在长下载阶段停在25%。
+        // 为了持续“假装增长”，将解析阶段的目标直接提升到60%，
+        // 覆盖整个下载阶段，直到服务器推送新的更高阶段。
         if (message.includes('解析') || message.includes('parsing')) {
             this.smartProgress.stage = 'parsing';
-            this.smartProgress.target = 25;
+            this.smartProgress.target = 60;
         } else if (message.includes('下载') || message.includes('downloading')) {
             this.smartProgress.stage = 'downloading';
             this.smartProgress.target = 60;

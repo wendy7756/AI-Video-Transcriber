@@ -2,7 +2,7 @@
 # backend/translator.py - 文字翻譯器
 # =============================================================================
 # 此檔案包含文字翻譯器類別，負責使用GPT-4o進行高品質翻譯。
-# 主要功能包括文字翻譯、語言檢測、分塊處理等。
+# 主要功能包括文字翻譯、語言偵測、分塊處理等。
 # 依賴：OpenAI API等
 # =============================================================================
 
@@ -20,12 +20,12 @@ class Translator:
         """
         初始化翻譯器。
 
-        設定OpenAI客戶端和語言映射。
+        設定OpenAI客戶端和語言對應。
         """
         self.client = None
         self._init_openai_client()
 
-        # 語言映射
+        # 語言對應
         self.language_map = {
             "zh": "中文（簡體）",
             "zh-tw": "中文（繁體）",
@@ -54,7 +54,7 @@ class Translator:
             base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
             if not api_key:
-                logger.warning("未設置OPENAI_API_KEY環境變數")
+                logger.warning("未設定OPENAI_API_KEY環境變數")
                 return
 
             self.client = OpenAI(
@@ -69,36 +69,36 @@ class Translator:
 
     def _detect_source_language(self, text: str) -> str:
         """
-        檢測源文字語言。
+        偵測來源文字語言。
 
         Args:
-            text: 要檢測語言的文字
+            text: 要偵測語言的文字
 
         Returns:
-            str: 檢測到的語言代碼
+            str: 偵測到的語言代碼
         """
-        # 簡單的語言檢測邏輯
-        if "**檢測語言:**" in text:
+        # 簡單的語言偵測邏輯
+        if "**偵測語言:**" in text:
             lines = text.split('\n')
             for line in lines:
-                if "**檢測語言:**" in line:
+                if "**偵測語言:**" in line:
                     lang = line.split(":")[-1].strip()
                     return lang
 
-        # 基於字符統計的簡單檢測
+        # 基於字元統計的簡單偵測
         total_chars = len(text)
         if total_chars == 0:
             return "en"
 
-        # 統計中文字符
+        # 統計中文字元
         chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
         chinese_ratio = chinese_chars / total_chars
 
-        # 統計日文字符
+        # 統計日文字元
         japanese_chars = len(re.findall(r'[\u3040-\u309f\u30a0-\u30ff]', text))
         japanese_ratio = japanese_chars / total_chars
 
-        # 統計韓文字符
+        # 統計韓文字元
         korean_chars = len(re.findall(r'[\uac00-\ud7af]', text))
         korean_ratio = korean_chars / total_chars
 
@@ -117,7 +117,7 @@ class Translator:
 
         Args:
             text: 要分塊的文字
-            max_chars_per_chunk: 每個塊的最大字符數
+            max_chars_per_chunk: 每個塊的最大字元數
 
         Returns:
             list: 分塊後的文字列表
@@ -129,7 +129,7 @@ class Translator:
         current_chunk = ""
 
         for paragraph in paragraphs:
-            # 如果當前段落加上現有塊超過限制
+            # 如果目前段落加上現有塊超過限制
             if len(current_chunk) + len(paragraph) + 2 > max_chars_per_chunk and current_chunk:
                 chunks.append(current_chunk.strip())
                 current_chunk = paragraph
@@ -139,7 +139,7 @@ class Translator:
                 else:
                     current_chunk = paragraph
 
-        # 添加最後一塊
+        # 新增最後一塊
         if current_chunk.strip():
             chunks.append(current_chunk.strip())
 
@@ -175,7 +175,7 @@ class Translator:
         Args:
             text: 要翻譯的文字
             target_language: 目標語言代碼
-            source_language: 源語言代碼（可選，會自動檢測）
+            source_language: 來源語言代碼（可選，會自動偵測）
 
         Returns:
             翻譯後的文字
@@ -185,11 +185,11 @@ class Translator:
                 logger.warning("OpenAI API不可用，無法翻譯")
                 return text
 
-            # 檢測源語言
+            # 偵測來源語言
             if not source_language:
                 source_language = self._detect_source_language(text)
 
-            # 如果源語言和目標語言相同，直接返回
+            # 如果來源語言和目標語言相同，直接返回
             if source_language == target_language:
                 return text
 
@@ -216,7 +216,7 @@ class Translator:
         Args:
             text: 要翻譯的文字
             target_lang_name: 目標語言名稱
-            source_lang_name: 源語言名稱
+            source_lang_name: 來源語言名稱
 
         Returns:
             翻譯後的文字
@@ -227,14 +227,14 @@ class Translator:
 - 保持原文的格式和結構（包括段落分隔、標題等）
 - 準確傳達原意，語言自然流暢
 - 保留專業術語的準確性
-- 不要添加解釋或註釋
+- 不要新增解釋或註釋
 - 如果遇到Markdown格式，請保持格式不變"""
 
         user_prompt = f"""請將以下{source_lang_name}文字翻譯為{target_lang_name}：
 
 {text}
 
-只返回翻譯結果，不要添加任何說明。"""
+只返回翻譯結果，不要新增任何說明。"""
 
         try:
             response = self.client.chat.completions.create(
@@ -260,7 +260,7 @@ class Translator:
         Args:
             text: 要翻譯的文字
             target_lang_name: 目標語言名稱
-            source_lang_name: 源語言名稱
+            source_lang_name: 來源語言名稱
 
         Returns:
             翻譯後的文字
@@ -275,13 +275,13 @@ class Translator:
 
             system_prompt = f"""你是專業翻譯專家。請將{source_lang_name}文字準確翻譯為{target_lang_name}。
 
-這是完整文檔的第{i+1}部分，共{len(chunks)}部分。
+這是完整文件的第{i+1}部分，共{len(chunks)}部分。
 
 翻譯要求：
 - 保持原文的格式和結構
 - 準確傳達原意，語言自然流暢
 - 保留專業術語的準確性
-- 不要添加解釋或註釋
+- 不要新增解釋或註釋
 - 保持與前後文的連貫性"""
 
             user_prompt = f"""請將以下{source_lang_name}文字翻譯為{target_lang_name}：
@@ -317,7 +317,7 @@ class Translator:
         判斷是否需要翻譯。
 
         Args:
-            source_language: 源語言代碼
+            source_language: 來源語言代碼
             target_language: 目標語言代碼
 
         Returns:

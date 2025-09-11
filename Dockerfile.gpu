@@ -1,10 +1,10 @@
-# AI影片轉錄器 Docker鏡像 - GPU 版本
+# AI影片轉錄器 Docker映像 - GPU 版本
 FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
 
-# 設置工作目錄
+# 設定工作目錄
 WORKDIR /app
 
-# 設置非互動模式 & pip 環境參數
+# 設定非互動模式 & pip 環境參數
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# 創建 python/pip 符號連結（保證 python 指向 python3）
+# 建立 python/pip 符號連結（保證 python 指向 python3）
 RUN [ ! -L /usr/bin/python ] && ln -s /usr/bin/python3 /usr/bin/python || true && \
     [ ! -L /usr/bin/pip ] && ln -s /usr/bin/pip3 /usr/bin/pip || true
 
@@ -37,10 +37,10 @@ RUN pip install --no-cache-dir \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 複製應用程式代碼
+# 複製應用程式碼
 COPY . /app/
 
-# 建立臨時目錄
+# 建立暫存目錄
 RUN mkdir -p /app/temp && \
     chmod 755 /app/temp
 
@@ -49,7 +49,7 @@ ENV HOST=0.0.0.0 \
     PORT=8893 \
     WHISPER_MODEL_SIZE=base
 
-# 暴露端口
+# 開放連接埠
 EXPOSE 8893
 
 # 健康檢查

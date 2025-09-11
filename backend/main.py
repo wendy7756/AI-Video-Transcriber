@@ -2,7 +2,7 @@
 # backend/main.py - AI影片轉錄器主應用程式
 # =============================================================================
 # 此檔案包含FastAPI主應用程式，負責處理影片轉錄、摘要和翻譯的Web服務。
-# 主要功能包括影片處理任務管理、實時狀態更新、檔案下載等。
+# 主要功能包括影片處理任務管理、即時狀態更新、檔案下載等。
 # 依賴：FastAPI, yt-dlp, Faster-Whisper, OpenAI API等
 # =============================================================================
 
@@ -24,18 +24,18 @@ import random
 import string
 from datetime import datetime
 
-from video_processor import VideoProcessor
-from transcriber import Transcriber
-from summarizer import Summarizer
-from translator import Translator
+from .video_processor import VideoProcessor
+from .transcriber import Transcriber
+from .summarizer import Summarizer
+from .translator import Translator
 
-# 配置日誌
+# 設定日誌
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI影片轉錄器", version="1.0.0")
 
-# CORS中介軟體配置
+# CORS中介軟體設定
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -50,7 +50,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 # 掛載靜態檔案
 app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="static")
 
-# 創建臨時目錄
+# 建立暫存目錄
 TEMP_DIR = PROJECT_ROOT / "temp"
 TEMP_DIR.mkdir(exist_ok=True)
 
@@ -101,31 +101,31 @@ def save_tasks(tasks_data):
 
 async def broadcast_task_update(task_id: str, task_data: dict):
     """
-    向所有連接的SSE客戶端廣播任務狀態更新。
+    向所有連線的SSE客戶端廣播任務狀態更新。
 
     Args:
         task_id (str): 任務ID。
         task_data (dict): 任務狀態資料。
 
     Note:
-        此函數會清理斷開的連接以維持效能。
+        此函式會清理斷開的連線以維持效能。
     """
-    logger.info(f"廣播任務更新: {task_id}, 狀態: {task_data.get('status')}, 連接數: {len(sse_connections.get(task_id, []))}")
+    logger.info(f"廣播任務更新: {task_id}, 狀態: {task_data.get('status')}, 連線數: {len(sse_connections.get(task_id, []))}")
     if task_id in sse_connections:
         connections_to_remove = []
         for queue in sse_connections[task_id]:
             try:
                 await queue.put(json.dumps(task_data, ensure_ascii=False))
-                logger.debug(f"訊息已發送到隊列: {task_id}")
+                logger.debug(f"訊息已傳送到佇列: {task_id}")
             except Exception as e:
-                logger.warning(f"發送訊息到隊列失敗: {e}")
+                logger.warning(f"傳送訊息到佇列失敗: {e}")
                 connections_to_remove.append(queue)
 
-        # 移除斷開的連接
+        # 移除斷開的連線
         for queue in connections_to_remove:
             sse_connections[task_id].remove(queue)
 
-        # 如果沒有連接了，清理該任務的連接列表
+        # 如果沒有連線了，清理該任務的連線列表
         if not sse_connections[task_id]:
             del sse_connections[task_id]
 
@@ -135,12 +135,12 @@ tasks = load_tasks()
 processing_urls = set()
 # 儲存活躍的任務物件，用於控制和取消
 active_tasks = {}
-# 儲存SSE連接，用於實時推送狀態更新
+# 儲存SSE連線，用於即時推播狀態更新
 sse_connections = {}
 
 def generate_task_id() -> str:
     """
-    生成8碼唯一任務ID。
+    產生8碼唯一任務ID。
 
     格式：HHMMSSXX（時分秒6碼 + 隨機2碼）
     範例：110730A3, 110731K7, 110732B2
@@ -148,16 +148,16 @@ def generate_task_id() -> str:
     Returns:
         str: 8碼唯一任務ID。
     """
-    # 字符集：數字 + 大寫字母（62種可能）
+    # 字元集：數字 + 大寫字母（62種可能）
     chars = string.digits + string.ascii_uppercase
 
-    # 生成唯一ID（最多重試100次）
+    # 產生唯一ID（最多重試100次）
     max_attempts = 100
     for _ in range(max_attempts):
         # 獲取當前時間 HHMMSS 格式
         now = datetime.now().strftime("%H%M%S")
 
-        # 隨機生成2碼
+        # 隨機產生2碼
         random_part = ''.join(random.choices(chars, k=2))
         task_id = f"{now}{random_part}"
 
@@ -166,26 +166,26 @@ def generate_task_id() -> str:
             return task_id
 
     # 如果重試次數用完，使用UUID作為fallback
-    logger.warning("無法生成唯一8碼ID，使用UUID fallback")
+    logger.warning("無法產生唯一8碼ID，使用UUID fallback")
     return str(uuid.uuid4())[:8].upper()
 
 def _sanitize_title_for_filename(title: str) -> str:
     """
-    將影片標題清洗為安全的檔案名片段。
+    將影片標題清理為安全的檔名片段。
 
     Args:
         title (str): 原始影片標題。
 
     Returns:
-        str: 安全的檔案名片段。
+        str: 安全的檔名片段。
     """
     if not title:
         return "untitled"
-    # 僅保留字母數字、下劃線、連字符與空格
-    safe = re.sub(r"[^\w\-\s]", "", title)
-    # 壓縮空白並轉為下劃線
-    safe = re.sub(r"\s+", "_", safe).strip("._-")
-    # 最長限制，避免過長檔案名問題
+    # 僅保留字母數字、底線、連字號與空格
+    safe = re.sub(r"[^\\w\\-\\s]", "", title)
+    # 壓縮空白並轉為底線
+    safe = re.sub(r"\\s+", "_", safe).strip("._-")
+    # 最長限制，避免過長檔名問題
     return safe[:80] or "untitled"
 
 @app.get("/")
@@ -204,7 +204,7 @@ async def process_video(
     summary_language: str = Form(default="zh")
 ):
     """
-    處理影片鏈接，返回任務ID。
+    處理影片連結，返回任務ID。
 
     Args:
         url (str): 影片URL。
@@ -219,12 +219,12 @@ async def process_video(
     try:
         # 檢查是否已經在處理相同的URL
         if url in processing_urls:
-            # 查找現有任務
+            # 尋找現有任務
             for tid, task in tasks.items():
                 if task.get("url") == url:
                     return {"task_id": tid, "message": "該影片正在處理中，請等待..."}
             
-        # 生成唯一任務ID
+        # 產生唯一任務ID
         task_id = generate_task_id()
         
         # 標記URL為正在處理
@@ -238,15 +238,15 @@ async def process_video(
             "script": None,
             "summary": None,
             "error": None,
-            "url": url  # 保存URL用于去重
+            "url": url  # 儲存URL用於去重
         }
         save_tasks(tasks)
         
-        # 創建並跟踪非同步任務
+        # 建立並追蹤非同步任務
         task = asyncio.create_task(process_video_task(task_id, url, summary_language))
         active_tasks[task_id] = task
         
-        return {"task_id": task_id, "message": "任務已創建，正在處理中..."}
+        return {"task_id": task_id, "message": "任務已建立，正在處理中..."}
         
     except Exception as e:
         logger.error(f"處理影片時出錯: {str(e)}")
@@ -254,7 +254,7 @@ async def process_video(
 
 async def process_video_task(task_id: str, url: str, summary_language: str):
     """
-    异步处理视频任务
+    非同步處理影片任務
     """
     try:
         # 立即更新狀態：開始下載影片
@@ -266,7 +266,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
 
-        # 添加短暫延遲確保狀態更新
+        # 加入短暫延遲確保狀態更新
         import asyncio
         await asyncio.sleep(0.1)
 
@@ -292,25 +292,25 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         # 更新狀態：轉錄中
         tasks[task_id].update({
             "progress": 40,
-            "message": "正在轉錄音頻..."
+            "message": "正在轉錄音訊..."
         })
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
         
-        # 轉錄音頻
+        # 轉錄音訊
         raw_script = await transcriber.transcribe(audio_path)
 
-        # 將Whisper原始轉錄儲存為Markdown檔案，供下載/歸檔
+        # 將Whisper原始轉錄儲存為Markdown檔案，供下載/封存
         try:
             short_id = task_id.replace("-", "")[:6]
             safe_title = _sanitize_title_for_filename(video_title)
-            raw_md_filename = f"raw_{safe_title}_{short_id}.md"
+            raw_md_filename = f"raw_{{safe_title}}_{{short_id}}.md"
             raw_md_path = TEMP_DIR / raw_md_filename
             with open(raw_md_path, "w", encoding="utf-8") as f:
                 content_raw = (raw_script or "") + f"\n\nsource: {url}\n"
                 f.write(content_raw)
 
-            # 記錄原始轉錄檔案路徑（僅儲存檔案名，實際路徑位於TEMP_DIR）
+            # 記錄原始轉錄檔案路徑（僅儲存檔名，實際路徑位於TEMP_DIR）
             tasks[task_id].update({
                 "raw_script_file": raw_md_filename
             })
@@ -319,23 +319,23 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         except Exception as e:
             logger.error(f"儲存原始轉錄Markdown失敗: {e}")
 
-        # 更新狀態：優化轉錄文字
+        # 更新狀態：最佳化轉錄文字
         tasks[task_id].update({
             "progress": 55,
-            "message": "正在優化轉錄文字..."
+            "message": "正在最佳化轉錄文字..."
         })
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
 
-        # 優化轉錄文字：修正錯別字，按含義分段
+        # 最佳化轉錄文字：修正錯別字，按語意分段
         script = await summarizer.optimize_transcript(raw_script)
 
-        # 為轉錄文字添加標題，並在結尾添加來源鏈接
+        # 為轉錄文字加入標題，並在結尾加入來源連結
         script_with_title = f"# {video_title}\n\n{script}\n\nsource: {url}\n"
 
         # 檢查是否需要翻譯
         detected_language = transcriber.get_detected_language(raw_script)
-        logger.info(f"檢測到的語言: {detected_language}, 摘要語言: {summary_language}")
+        logger.info(f"偵測到的語言: {detected_language}, 摘要語言: {summary_language}")
 
         translation_content = None
         translation_filename = None
@@ -356,7 +356,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
             translation_with_title = f"# {video_title}\n\n{translation_content}\n\nsource: {url}\n"
 
             # 儲存翻譯到檔案
-            translation_filename = f"translation_{safe_title}_{short_id}.md"
+            translation_filename = f"translation_{{safe_title}}_{{short_id}}.md"
             translation_path = TEMP_DIR / translation_filename
             async with aiofiles.open(translation_path, "w", encoding="utf-8") as f:
                 await f.write(translation_with_title)
@@ -375,14 +375,14 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         summary = await summarizer.summarize(script, summary_language, video_title)
         summary_with_source = summary + f"\n\nsource: {url}\n"
 
-        # 儲存優化後的轉錄文字到檔案
-        script_filename = f"transcript_{task_id}.md"
+        # 儲存最佳化後的轉錄文字到檔案
+        script_filename = f"transcript_{{task_id}}.md"
         script_path = TEMP_DIR / script_filename
         async with aiofiles.open(script_path, "w", encoding="utf-8") as f:
             await f.write(script_with_title)
 
         # 重新命名為新規則：transcript_標題_短ID.md
-        new_script_filename = f"transcript_{safe_title}_{short_id}.md"
+        new_script_filename = f"transcript_{{safe_title}}_{{short_id}}.md"
         new_script_path = TEMP_DIR / new_script_filename
         try:
             if script_path.exists():
@@ -393,7 +393,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
             pass
 
         # 儲存摘要到檔案（summary_標題_短ID.md）
-        summary_filename = f"summary_{safe_title}_{short_id}.md"
+        summary_filename = f"summary_{{safe_title}}_{{short_id}}.md"
         summary_path = TEMP_DIR / summary_filename
         async with aiofiles.open(summary_path, "w", encoding="utf-8") as f:
             await f.write(summary_with_source)
@@ -414,7 +414,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
             "summary_language": summary_language
         }
 
-        # 如果有翻譯，添加翻譯資訊
+        # 如果有翻譯，加入翻譯資訊
         if translation_content and translation_path:
             task_result.update({
                 "translation": translation_with_title,
@@ -435,8 +435,8 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         if task_id in active_tasks:
             del active_tasks[task_id]
 
-        # 不要立即刪除臨時檔案！保留給用戶下載
-        # 檔案會在一定時間後自動清理或用戶手動清理
+        # 不要立即刪除暫存檔案！保留給使用者下載
+        # 檔案會在一定時間後自動清理或使用者手動清理
 
     except Exception as e:
         logger.error(f"任務 {task_id} 處理失敗: {str(e)}")
@@ -492,23 +492,23 @@ async def task_stream(task_id: str):
         raise HTTPException(status_code=404, detail="任務不存在")
 
     async def event_generator():
-        # 創建任務專用的隊列
+        # 建立任務專用的佇列
         queue = asyncio.Queue()
 
-        # 將隊列添加到連接列表
+        # 將佇列加入到連線列表
         if task_id not in sse_connections:
             sse_connections[task_id] = []
         sse_connections[task_id].append(queue)
 
         try:
-            # 立即發送目前狀態
+            # 立即傳送目前狀態
             current_task = tasks.get(task_id, {})
             yield f"data: {json.dumps(current_task, ensure_ascii=False)}\n\n"
 
             # 持續監聽狀態更新
             while True:
                 try:
-                    # 等待狀態更新，逾時時間30秒發送心跳
+                    # 等待狀態更新，逾時時間30秒傳送心跳
                     data = await asyncio.wait_for(queue.get(), timeout=30.0)
                     yield f"data: {data}\n\n"
 
@@ -518,15 +518,15 @@ async def task_stream(task_id: str):
                         break
 
                 except asyncio.TimeoutError:
-                    # 發送心跳保持連接
+                    # 傳送心跳保持連線
                     yield f"data: {json.dumps({'type': 'heartbeat'}, ensure_ascii=False)}\n\n"
 
         except asyncio.CancelledError:
-            logger.info(f"SSE連接被取消: {task_id}")
+            logger.info(f"SSE連線被取消: {task_id}")
         except Exception as e:
             logger.error(f"SSE流異常: {e}")
         finally:
-            # 清理連接
+            # 清理連線
             if task_id in sse_connections and queue in sse_connections[task_id]:
                 sse_connections[task_id].remove(queue)
                 if not sse_connections[task_id]:
@@ -550,7 +550,7 @@ async def download_file(filename: str):
     直接從temp目錄下載檔案（簡化方案）。
 
     Args:
-        filename (str): 要下載的檔案名稱。
+        filename (str): 要下載的檔名。
 
     Returns:
         FileResponse: 檔案下載回應。
@@ -559,13 +559,13 @@ async def download_file(filename: str):
         HTTPException: 當檔案不存在或格式無效時拋出相應錯誤。
     """
     try:
-        # 檢查檔案擴展名安全性
+        # 檢查檔案副檔名安全性
         if not filename.endswith('.md'):
             raise HTTPException(status_code=400, detail="僅支援下載.md檔案")
 
-        # 檢查檔案名格式（防止路徑遍歷攻擊）
+        # 檢查檔名格式（防止路徑遍歷攻擊）
         if '..' in filename or '/' in filename or '\\' in filename:
-            raise HTTPException(status_code=400, detail="檔案名格式無效")
+            raise HTTPException(status_code=400, detail="檔名格式無效")
 
         file_path = TEMP_DIR / filename
         if not file_path.exists():
@@ -600,7 +600,7 @@ async def delete_task(task_id: str):
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail="任務不存在")
 
-    # 如果任務還在運行，先取消它
+    # 如果任務還在執行，先取消它
     if task_id in active_tasks:
         task = active_tasks[task_id]
         if not task.done():

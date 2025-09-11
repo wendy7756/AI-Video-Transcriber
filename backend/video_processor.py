@@ -2,7 +2,7 @@
 # backend/video_processor.py - 影片處理器
 # =============================================================================
 # 此檔案包含影片處理器類別，負責使用yt-dlp下載和轉換影片。
-# 主要功能包括影片下載、音頻提取、格式轉換等。
+# 主要功能包括影片下載、音訊提取、格式轉換等。
 # 依賴：yt-dlp, FFmpeg等
 # =============================================================================
 
@@ -19,7 +19,7 @@ class VideoProcessor:
 
     def __init__(self):
         self.ydl_opts = {
-            'format': 'bestaudio/best',  # 優先下載最佳音頻源
+            'format': 'bestaudio/best',  # 優先下載最佳音訊來源
             'outtmpl': '%(title)s.%(ext)s',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
@@ -40,17 +40,17 @@ class VideoProcessor:
         下載影片並轉換為m4a格式。
 
         Args:
-            url: 影片鏈接
+            url: 影片連結
             output_dir: 輸出目錄
 
         Returns:
-            tuple: (轉換後的音頻檔案路徑, 影片標題)
+            tuple: (轉換後的音訊檔案路徑, 影片標題)
         """
         try:
-            # 創建輸出目錄
+            # 建立輸出目錄
             output_dir.mkdir(exist_ok=True)
 
-            # 生成唯一的檔案名
+            # 產生唯一的檔名
             import uuid
             unique_id = str(uuid.uuid4())[:8]
             output_template = str(output_dir / f"audio_{unique_id}.%(ext)s")
@@ -74,20 +74,20 @@ class VideoProcessor:
                 # 下載影片（放到執行緒池避免阻塞事件循環）
                 await asyncio.to_thread(ydl.download, [url])
 
-            # 查找生成的m4a檔案
+            # 尋找產生的m4a檔案
             audio_file = str(output_dir / f"audio_{unique_id}.m4a")
 
             if not os.path.exists(audio_file):
-                # 如果m4a檔案不存在，查找其他音頻格式
+                # 如果m4a檔案不存在，尋找其他音訊格式
                 for ext in ['webm', 'mp4', 'mp3', 'wav']:
                     potential_file = str(output_dir / f"audio_{unique_id}.{ext}")
                     if os.path.exists(potential_file):
                         audio_file = potential_file
                         break
                 else:
-                    raise Exception("未找到下載的音頻檔案")
+                    raise Exception("未找到下載的音訊檔案")
 
-            # 校驗時長，如果和源影片差異較大，嘗試一次ffmpeg規範化重封裝
+            # 校驗時長，如果和來源影片差異較大，嘗試一次ffmpeg規範化重封裝
             try:
                 import subprocess, shlex
                 probe_cmd = f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 {shlex.quote(audio_file)}"
@@ -98,7 +98,7 @@ class VideoProcessor:
 
             if expected_duration and actual_duration and abs(actual_duration - expected_duration) / expected_duration > 0.1:
                 logger.warning(
-                    f"音頻時長異常，期望{expected_duration}s，實際{actual_duration}s，嘗試重封裝修復…"
+                    f"音訊時長異常，期望{expected_duration}s，實際{actual_duration}s，嘗試重封裝修復…"
                 )
                 try:
                     fixed_path = str(output_dir / f"audio_{unique_id}_fixed.m4a")
@@ -113,7 +113,7 @@ class VideoProcessor:
                 except Exception as e:
                     logger.error(f"重封裝失敗：{e}")
 
-            logger.info(f"音頻檔案已保存: {audio_file}")
+            logger.info(f"音訊檔案已儲存: {audio_file}")
             return audio_file, video_title
 
         except Exception as e:
@@ -125,7 +125,7 @@ class VideoProcessor:
         獲取影片資訊。
 
         Args:
-            url: 影片鏈接
+            url: 影片連結
 
         Returns:
             dict: 影片資訊字典

@@ -1,15 +1,27 @@
 <!DOCTYPE html>
+<!-- 
+AI 影片轉錄器 - 主頁面
+支援多平台影片（YouTube、TikTok、Bilibili等）的自動轉錄和智慧摘要
+-->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Video Transcriber</title>
+    <!-- 外部樣式表和JavaScript庫 -->
+    <!-- Font Awesome 圖示庫 -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Prism.js 程式碼高亮樣式 -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" rel="stylesheet">
+    <!-- Marked.js Markdown 解析器 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
+    <!-- Prism.js 程式碼高亮核心 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <!-- Prism.js 自動載入器 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <!-- 主要樣式表 -->
     <style>
+        /* CSS 變數定義 - 全域顏色和樣式配置 */
         :root {
             --primary-color: #4a90e2;
             --secondary-color: #7ed321;
@@ -24,12 +36,14 @@
             --border-radius: 12px;
         }
 
+        /* 全域重置樣式 */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
 
+        /* 主體樣式 */
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: var(--background-color);
@@ -37,12 +51,14 @@
             line-height: 1.6;
         }
 
+        /* 主容器樣式 */
         .container {
             max-width: 1200px;
             margin: 40px auto;
             padding: 40px;
         }
 
+        /* 頁面標題區域 */
         .header {
             text-align: center;
             margin-bottom: 40px;
@@ -62,6 +78,7 @@
             margin-bottom: 0;
         }
 
+        /* 表單卡片樣式 */
         .form-card {
             background: var(--surface-color);
             padding: 40px;
@@ -154,6 +171,7 @@
             background: #68b919;
         }
 
+        /* 進度顯示區域 */
         .progress-section {
             display: none;
             background: var(--surface-color);
@@ -196,6 +214,7 @@
             font-style: italic;
         }
 
+        /* 結果顯示區域 */
         .results-section {
             display: none;
             margin-top: 50px;
@@ -236,6 +255,7 @@
             gap: 10px;
         }
 
+        /* 標籤頁導航 */
         .content-tabs {
             display: flex;
             border-bottom: 2px solid var(--border-color);
@@ -259,6 +279,7 @@
             border-bottom-color: var(--primary-color);
         }
 
+        /* 標籤頁內容 */
         .tab-content {
             display: none;
             background: var(--surface-color);
@@ -302,6 +323,7 @@
             color: var(--primary-color);
         }
 
+        /* 警告提示樣式 */
         .alert {
             padding: 16px 20px;
             border-radius: 8px;
@@ -344,6 +366,7 @@
             border-top: 1px solid var(--border-color);
         }
 
+        /* 語言切換器 */
         .language-switcher {
             position: absolute;
             top: 20px;
@@ -381,6 +404,7 @@
             transform: translateY(2px);
         }
 
+        /* 響應式設計 - 手機版樣式 */
         @media (max-width: 768px) {
             .form-row {
                 flex-direction: column;
@@ -409,22 +433,26 @@
     </style>
 </head>
 <body>
+    <!-- 主容器 -->
     <div class="container">
-        <!-- 头部 -->
+        <!-- 頁面標題和語言切換區域 -->
         <div class="header">
+            <!-- 語言切換按鈕 -->
             <div class="language-switcher">
                 <button id="langToggle" class="lang-toggle-btn">
                     <span id="langText">English</span>
                     <i class="fas fa-chevron-down"></i>
                 </button>
             </div>
+            <!-- 主標題和副標題 -->
             <h1><i class="fas fa-video"></i> <span data-i18n="title">AI Video Transcriber</span></h1>
             <p data-i18n="subtitle">Supports automatic transcription and AI summary for YouTube, Tiktok, Bilibili and other platforms</p>
         </div>
 
-        <!-- 输入表单 -->
+        <!-- 影片URL輸入表單區域 -->
         <div class="form-card">
             <form id="videoForm">
+                <!-- 影片URL輸入欄位 -->
                 <div class="form-group">
                     <label for="videoUrl">
                         <i class="fas fa-link"></i> <span data-i18n="video_url">Video URL</span>
@@ -435,7 +463,9 @@
                            required>
                 </div>
                 
+                <!-- 表單橫列布局：摘要語言選擇和提交按鈕 -->
                 <div class="form-row">
+                    <!-- 摘要語言選擇器 -->
                     <div class="form-group">
                         <label for="summaryLanguage">
                             <i class="fas fa-language"></i> <span data-i18n="summary_language">Summary Language</span>
@@ -455,6 +485,7 @@
                         </select>
                     </div>
                     
+                    <!-- 提交按鈕 -->
                     <div class="form-group">
                         <button type="submit" class="btn" id="submitBtn">
                             <i class="fas fa-play"></i> <span data-i18n="start_transcription">Start</span>
@@ -464,30 +495,35 @@
             </form>
         </div>
 
-        <!-- 进度显示 -->
+        <!-- 處理進度顯示區域 -->
         <div id="progressSection" class="progress-section">
+            <!-- 進度標題和百分比顯示 -->
             <div class="progress-header">
                 <h3 data-i18n="processing_progress">Processing Progress</h3>
                 <span class="progress-status" id="progressStatus">0%</span>
             </div>
+            <!-- 進度條 -->
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill"></div>
             </div>
+            <!-- 進度狀態訊息 -->
             <div class="progress-message" id="progressMessage" data-i18n="preparing">Preparing...</div>
         </div>
 
-        <!-- 错误提示 -->
+        <!-- 錯誤訊息提示區域 -->
         <div id="errorAlert" class="alert alert-error" style="display: none;">
             <i class="fas fa-exclamation-triangle"></i>
             <span id="errorMessage"></span>
         </div>
 
-        <!-- 结果显示 -->
+        <!-- 轉錄結果顯示區域 -->
         <div id="resultsSection" class="results-section">
+            <!-- 結果區域標題和下載按鈕 -->
             <div class="results-header">
                 <div class="video-title-container">
-                    <!-- 移除重复的标题显示，因为内容中已经包含标题 -->
+                    <!-- 影片標題容器（標題由JavaScript動態生成） -->
                 </div>
+                <!-- 檔案下載按鈕組 -->
                 <div class="download-buttons">
                     <button class="btn btn-success" id="downloadScript">
                         <span data-i18n="download_transcript">Download Transcript</span>
@@ -501,37 +537,45 @@
                 </div>
             </div>
             
+            <!-- 結果內容標籤頁導航 -->
             <div class="content-tabs">
+                <!-- 轉錄文字標籤頁 -->
                 <button class="tab-button active" data-tab="script">
                     <i class="fas fa-file-text"></i> <span data-i18n="transcript_text">Transcript Text</span>
                 </button>
+                <!-- AI摘要標籤頁 -->
                 <button class="tab-button" data-tab="summary">
                     <i class="fas fa-clipboard-list"></i> <span data-i18n="intelligent_summary">AI Summary</span>
                 </button>
+                <!-- 翻譯標籤頁（根據語言情況動態顯示/隱藏） -->
                 <button class="tab-button" data-tab="translation" id="translationTabBtn" style="display: none;">
                     <i class="fas fa-language"></i> <span data-i18n="translation">Translation</span>
                 </button>
             </div>
             
-                        <div id="scriptTab" class="tab-content active">
+            <!-- 轉錄文字內容標籤頁 -->
+            <div id="scriptTab" class="tab-content active">
                 <div class="markdown-content" id="scriptContent"></div>
             </div>
 
+            <!-- 翻譯內容標籤頁 -->
             <div id="translationTab" class="tab-content">
                 <div class="markdown-content" id="translationContent"></div>
             </div>
 
+            <!-- AI摘要內容標籤頁 -->
             <div id="summaryTab" class="tab-content">
                 <div class="markdown-content" id="summaryContent"></div>
             </div>
         </div>
 
-        <!-- 页脚 -->
+        <!-- 頁面頁腳 -->
         <div class="footer">
             <p><i class="fas fa-heart" style="color: #e74c3c;"></i> <span data-i18n="footer_text">Powered by AI, supports multi-platform video transcription</span></p>
         </div>
     </div>
 
+    <!-- 主要JavaScript應用程式 -->
     <script src="/static/app.js?v=20250829"></script>
 </body>
 </html>

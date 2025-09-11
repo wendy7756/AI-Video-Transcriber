@@ -1,8 +1,8 @@
 # =============================================================================
-# backend/transcriber.py - 音頻轉錄器
+# backend/transcriber.py - 音訊轉錄器
 # =============================================================================
-# 此檔案包含音頻轉錄器類別，負責使用Faster-Whisper進行語音轉文字。
-# 主要功能包括音頻檔案轉錄、語言檢測、時間戳格式化等。
+# 此檔案包含音訊轉錄器類別，負責使用Faster-Whisper進行語音轉文字。
+# 主要功能包括音訊檔案轉錄、語言偵測、時間戳格式化等。
 # 依賴：faster-whisper, WhisperModel等
 # =============================================================================
 
@@ -11,7 +11,7 @@ from faster_whisper import WhisperModel
 import logging
 from typing import Optional
 
-# 在模組層級導入 PyTorch，避免熱重載問題
+# 在模組層級匯入 PyTorch，避免熱重載問題
 try:
     import torch
     TORCH_AVAILABLE = True
@@ -36,7 +36,7 @@ except ImportError as e:
 logger = logging.getLogger(__name__)
 
 class Transcriber:
-    """音頻轉錄器，使用Faster-Whisper進行語音轉文字"""
+    """音訊轉錄器，使用Faster-Whisper進行語音轉文字"""
 
     def __init__(self, model_size: str = "base"):
         """
@@ -52,7 +52,7 @@ class Transcriber:
 
     def _detect_device(self) -> str:
         """
-        自動檢測可用的運算裝置。
+        自動偵測可用的運算裝置。
 
         Returns:
             str: "cuda" 如果有 GPU，否則 "cpu"
@@ -61,7 +61,7 @@ class Transcriber:
             logger.info(f"PyTorch 版本: {TORCH_VERSION}")
             
             if CUDA_AVAILABLE and DEVICE_COUNT > 0:
-                logger.info(f"檢測到 {DEVICE_COUNT} 個 GPU 裝置: {DEVICE_NAME}")
+                logger.info(f"偵測到 {DEVICE_COUNT} 個 GPU 裝置: {DEVICE_NAME}")
                 logger.info(f"CUDA 版本: {CUDA_VERSION}")
                 return "cuda"
             else:
@@ -95,11 +95,11 @@ class Transcriber:
     
     async def transcribe(self, audio_path: str, language: Optional[str] = None) -> str:
         """
-        轉錄音頻檔案。
+        轉錄音訊檔案。
 
         Args:
-            audio_path: 音頻檔案路徑
-            language: 指定語言（可選，如果不指定則自動檢測）
+            audio_path: 音訊檔案路徑
+            language: 指定語言（可選，如果不指定則自動偵測）
 
         Returns:
             轉錄文字（Markdown格式）
@@ -107,14 +107,14 @@ class Transcriber:
         try:
             # 檢查檔案是否存在
             if not os.path.exists(audio_path):
-                raise Exception(f"音頻檔案不存在: {audio_path}")
+                raise Exception(f"音訊檔案不存在: {audio_path}")
 
             # 載入模型
             self._load_model()
 
-            logger.info(f"開始轉錄音頻: {audio_path}")
+            logger.info(f"開始轉錄音訊: {audio_path}")
 
-            # 直接調用會阻塞事件循環；放入執行緒避免阻塞
+            # 直接呼叫會阻塞事件循環；放入執行緒避免阻塞
             import asyncio
             def _do_transcribe():
                 return self.model.transcribe(
@@ -126,21 +126,21 @@ class Transcriber:
                     # 更穩健：開啟VAD與閾值，降低靜音/噪音導致的重複
                     vad_filter=True,
                     vad_parameters={
-                        "min_silence_duration_ms": 900,  # 靜音檢測時長
+                        "min_silence_duration_ms": 900,  # 靜音偵測時長
                         "speech_pad_ms": 300  # 語音填充
                     },
                     no_speech_threshold=0.7,  # 無語音閾值
-                    compression_ratio_threshold=2.3,  # 壓縮比閾值，檢測重複
-                    log_prob_threshold=-1.0,  # 日誌概率閾值
+                    compression_ratio_threshold=2.3,  # 壓縮比閾值，偵測重複
+                    log_prob_threshold=-1.0,  # 日誌機率閾值
                     # 避免錯誤累積導致的連環重複
                     condition_on_previous_text=False
                 )
             segments, info = await asyncio.to_thread(_do_transcribe)
 
             detected_language = info.language
-            self.last_detected_language = detected_language  # 保存檢測到的語言
-            logger.info(f"檢測到的語言: {detected_language}")
-            logger.info(f"語言檢測概率: {info.language_probability:.2f}")
+            self.last_detected_language = detected_language  # 儲存偵測到的語言
+            logger.info(f"偵測到的語言: {detected_language}")
+            logger.info(f"語言偵測機率: {info.language_probability:.2f}")
 
             # 組裝轉錄結果
             transcript_lines = []
@@ -152,7 +152,7 @@ class Transcriber:
             transcript_lines.append("## Transcription Content")
             transcript_lines.append("")
 
-            # 添加時間戳和文字
+            # 新增時間戳和文字
             for segment in segments:
                 start_time = self._format_time(segment.start)
                 end_time = self._format_time(segment.end)
@@ -205,15 +205,15 @@ class Transcriber:
 
     def get_detected_language(self, transcript_text: Optional[str] = None) -> Optional[str]:
         """
-        獲取檢測到的語言。
+        獲取偵測到的語言。
 
         Args:
             transcript_text: 轉錄文字（可選，用於從文字中提取語言資訊）
 
         Returns:
-            檢測到的語言代碼
+            偵測到的語言代碼
         """
-        # 如果有保存的語言，直接返回
+        # 如果有儲存的語言，直接返回
         if self.last_detected_language:
             return self.last_detected_language
 

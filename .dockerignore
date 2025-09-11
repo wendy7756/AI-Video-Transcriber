@@ -1,40 +1,87 @@
-# Git相关
+# Git
 .git
 .gitignore
+.gitattributes
 
-# Python相关
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
 .Python
-env/
-.venv/
-venv/
-ENV/
-
-# 临时文件
-temp/
-*.tmp
+env
+venv
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.pytest_cache
+nosetests.xml
+coverage.xml
+*.cover
 *.log
+.cache
+.mypy_cache
 
-# IDE相关
-.vscode/
-.idea/
+# Virtual environments
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode
+.idea
 *.swp
 *.swo
+*~
 
-# 系统文件
+# OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
-# 文档和图片（构建时不需要）
-*.md
-*.png
-*.jpg
-*.gif
-
-# Docker相关
-Dockerfile
-docker-compose.yml
+# Docker
+Dockerfile.*
+docker-compose*.yml
 .dockerignore
+
+# Documentation
+README.md
+README_ZH.md
+docs/
+*.md
+
+# Temporary files
+temp/
+*.tmp
+*.temp
+
+# Logs
+logs/
+*.log
+
+# Node.js (if any)
+node_modules/
+npm-debug.log*
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Test files
+tests/
+test_*.py
+*_test.py
+
+# Development files
+.devcontainer/
+.github/

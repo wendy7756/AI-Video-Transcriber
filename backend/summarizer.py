@@ -1,3 +1,11 @@
+# =============================================================================
+# backend/summarizer.py - 文字摘要器
+# =============================================================================
+# 此檔案包含文字摘要器類別，負責使用OpenAI API生成多語言摘要。
+# 主要功能包括轉錄文字優化、摘要生成、長文字分塊處理等。
+# 依賴：OpenAI API, 支援多種語言的智慧摘要。
+# =============================================================================
+
 import os
 import openai
 import logging
@@ -6,33 +14,37 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 class Summarizer:
-    """文本总结器，使用OpenAI API生成多语言摘要"""
-    
+    """文字摘要器，使用OpenAI API生成多語言摘要"""
+
     def __init__(self):
-        """初始化总结器"""
-        # 从环境变量获取OpenAI API配置
+        """
+        初始化摘要器。
+
+        從環境變數獲取OpenAI API配置，如果未設置API金鑰則無法使用摘要功能。
+        """
+        # 從環境變數獲取OpenAI API配置
         api_key = os.getenv("OPENAI_API_KEY")
         base_url = os.getenv("OPENAI_BASE_URL")
-        
+
         if not api_key:
-            logger.warning("未设置OPENAI_API_KEY环境变量，将无法使用摘要功能")
-        
+            logger.warning("未設置OPENAI_API_KEY環境變數，將無法使用摘要功能")
+
         if api_key:
             if base_url:
                 self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
-                logger.info(f"OpenAI客户端已初始化，使用自定义端点: {base_url}")
+                logger.info(f"OpenAI客戶端已初始化，使用自定義端點: {base_url}")
             else:
                 self.client = openai.OpenAI(api_key=api_key)
-                logger.info("OpenAI客户端已初始化，使用默认端点")
+                logger.info("OpenAI客戶端已初始化，使用預設端點")
         else:
             self.client = None
-        
-        # 支持的语言映射
+
+        # 支援的語言映射
         self.language_map = {
             "en": "English",
-            "zh": "中文（简体）",
+            "zh": "中文（繁體）",
             "es": "Español",
-            "fr": "Français", 
+            "fr": "Français",
             "de": "Deutsch",
             "it": "Italiano",
             "pt": "Português",

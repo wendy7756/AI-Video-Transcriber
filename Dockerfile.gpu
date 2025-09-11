@@ -1,0 +1,60 @@
+# AI影片轉錄器 Docker鏡像 - GPU 版本
+FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
+
+# 設置工作目錄
+WORKDIR /app
+
+# 設置非互動模式 & pip 環境參數
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONUNBUFFERED=1
+
+# 安裝 Python 和系統依賴
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-dev \
+    ffmpeg \
+    curl \
+    gcc \
+    g++ \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# 創建 python/pip 符號連結（保證 python 指向 python3）
+RUN [ ! -L /usr/bin/python ] && ln -s /usr/bin/python3 /usr/bin/python || true && \
+    [ ! -L /usr/bin/pip ] && ln -s /usr/bin/pip3 /usr/bin/pip || true
+
+# 安裝 PyTorch with CUDA 12.1 支援
+RUN pip install --no-cache-dir \
+    torch==2.5.1+cu121 \
+    torchvision==0.20.1+cu121 \
+    torchaudio==2.5.1+cu121 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# 複製 requirements.txt 並安裝其餘依賴
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 複製應用程式代碼
+COPY . /app/
+
+# 建立臨時目錄
+RUN mkdir -p /app/temp && \
+    chmod 755 /app/temp
+
+# 環境變數
+ENV HOST=0.0.0.0 \
+    PORT=8893 \
+    WHISPER_MODEL_SIZE=base
+
+# 暴露端口
+EXPOSE 8893
+
+# 健康檢查
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8893/ || exit 1
+
+# 啟動命令（可被 docker-compose 覆蓋）
+CMD ["python3", "start.py"]

@@ -7,16 +7,18 @@ services:
         BUILDKIT_INLINE_CACHE: 1
     ports:
       - "${PORT:-8893}:${PORT:-8893}"
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_api_key_here}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-tiny}
-      - HOST=0.0.0.0
-      - PORT=${PORT:-8893}
+    env_file:
+      - .env
     volumes:
       - .:/app
     restart: unless-stopped
     command: ["python3", "start.py", "--prod"]
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:${PORT:-8893}/health && nvidia-smi > /dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         reservations:

@@ -43,7 +43,7 @@ Thumbs.db
 # Logs
 *.log
 
-# Temporary files
+# Temporary files and task results
 temp/
 *.tmp
 *.temp

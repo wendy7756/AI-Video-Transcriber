@@ -129,12 +129,9 @@ def main():
     print("=" * 50)
 
     try:
-        # 切換到backend目錄並啟動服務
-        backend_dir = Path(__file__).parent / "backend"
-        os.chdir(backend_dir)
-
+        # 從專案根目錄啟動服務，並將 backend.main 作為 app
         cmd = [
-            sys.executable, "-m", "uvicorn", "main:app",
+            sys.executable, "-m", "uvicorn", "backend.main:app",
             "--host", host,
             "--port", str(port)
         ]

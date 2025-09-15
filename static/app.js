@@ -104,7 +104,7 @@ class VideoTranscriber {
                 error_download_failed: "Download failed: ",
                 error_no_file_to_download: "No file available for download"
             },
-            zh: {
+            "zh-tw": {
                 title: "AI影片轉錄器",
                 subtitle: "支援YouTube、Tiktok、Bilibili等平台的影片自動轉錄和智慧摘要",
                 video_url: "影片連結",
@@ -270,7 +270,7 @@ class VideoTranscriber {
      */
     toggleLanguage() {
         // 在中文和英文之間切換
-        this.currentLanguage = this.currentLanguage === 'en' ? 'zh' : 'en';
+        this.currentLanguage = this.currentLanguage === 'en' ? 'zh-tw' : 'en';
         this.switchLanguage(this.currentLanguage);
     }
 
@@ -294,7 +294,7 @@ class VideoTranscriber {
         this.updatePageText();
 
         // 更新HTML lang屬性以改善無障礙性
-        document.documentElement.lang = lang === 'zh' ? 'zh-TW' : 'en';
+        document.documentElement.lang = lang === 'zh-tw' ? 'zh-TW' : 'en';
 
         // 更新頁面標題
         document.title = this.t('title');

@@ -13,6 +13,7 @@ import re
 
 logger = logging.getLogger(__name__)
 
+
 class Translator:
     """文字翻譯器，使用GPT-4o進行高品質翻譯"""
 
@@ -27,7 +28,6 @@ class Translator:
 
         # 語言對應
         self.language_map = {
-            "zh": "中文（簡體）",
             "zh-tw": "中文（繁體）",
             "en": "English",
             "ja": "日本語",
@@ -41,7 +41,7 @@ class Translator:
             "ar": "العربية",
             "hi": "हिन्दी"
         }
-    
+
     def _init_openai_client(self):
         """
         初始化OpenAI客戶端。
@@ -51,7 +51,8 @@ class Translator:
         try:
             import os
             api_key = os.getenv("OPENAI_API_KEY")
-            base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+            base_url = os.getenv(
+                "OPENAI_BASE_URL", "https://api.openai.com/v1")
 
             if not api_key:
                 logger.warning("未設定OPENAI_API_KEY環境變數")
@@ -167,7 +168,7 @@ class Translator:
                     final_chunks.append(current_sub_chunk.strip())
 
         return final_chunks
-    
+
     async def translate_text(self, text: str, target_language: str, source_language: Optional[str] = None) -> str:
         """
         翻譯文字到目標語言。
@@ -193,8 +194,10 @@ class Translator:
             if source_language == target_language:
                 return text
 
-            source_lang_name = self.language_map.get(source_language, source_language)
-            target_lang_name = self.language_map.get(target_language, target_language)
+            source_lang_name = self.language_map.get(
+                source_language, source_language)
+            target_lang_name = self.language_map.get(
+                target_language, target_language)
 
             logger.info(f"開始翻譯：{source_lang_name} -> {target_lang_name}")
 
@@ -335,7 +338,7 @@ class Translator:
             return False
 
         # 處理中文的特殊情況
-        chinese_variants = ["zh", "zh-cn", "zh-hans", "chinese"]
+        chinese_variants = ["zh", "zh-cn", "zh-hans", "zh-tw", "chinese"]
         if source_lang in chinese_variants and target_lang in chinese_variants:
             return False
 

@@ -23,6 +23,7 @@ import re
 import random
 import string
 from datetime import datetime
+import shutil
 
 from .video_processor import VideoProcessor
 from .transcriber import Transcriber
@@ -50,9 +51,18 @@ PROJECT_ROOT = Path(__file__).parent.parent
 # 掛載靜態檔案
 app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="static")
 
-# 建立暫存目錄
+# 建立檔案目錄結構
 TEMP_DIR = PROJECT_ROOT / "temp"
 TEMP_DIR.mkdir(exist_ok=True)
+
+# 根據任務創建目錄
+def create_task_dir(task_id: str):
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%y%m%d%H%M%S")
+    task_dir_name = f"{timestamp}_{task_id}"
+    task_dir = TEMP_DIR / task_dir_name
+    task_dir.mkdir(exist_ok=True)
+    return task_dir
 
 # 初始化處理器
 video_processor = VideoProcessor()
@@ -198,10 +208,49 @@ async def read_root():
     """
     return FileResponse(str(PROJECT_ROOT / "static" / "index.html"))
 
+@app.get("/health")
+async def health_check():
+    """
+    健康檢查端點。
+
+    Returns:
+        dict: 健康狀態資訊。
+    """
+    try:
+        # 檢查基本服務狀態
+        status = {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "active_tasks": len(active_tasks),
+            "processing_urls": len(processing_urls)
+        }
+        
+        # 檢查 GPU 狀態（如果可用）
+        try:
+            import subprocess
+            result = subprocess.run(['nvidia-smi', '--query-gpu=memory.used,memory.total', '--format=csv,noheader,nounits'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                memory_info = result.stdout.strip().split(',')
+                status["gpu"] = {
+                    "available": True,
+                    "memory_used_mb": int(memory_info[0].strip()),
+                    "memory_total_mb": int(memory_info[1].strip())
+                }
+            else:
+                status["gpu"] = {"available": False, "error": "nvidia-smi failed"}
+        except Exception as e:
+            status["gpu"] = {"available": False, "error": str(e)}
+        
+        return status
+    except Exception as e:
+        logger.error(f"健康檢查失敗: {e}")
+        raise HTTPException(status_code=503, detail="Service unhealthy")
+
 @app.post("/api/process-video")
 async def process_video(
     url: str = Form(...),
-    summary_language: str = Form(default="zh")
+    summary_language: str = Form(default="zh-tw")
 ):
     """
     處理影片連結，返回任務ID。
@@ -256,12 +305,14 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
     """
     非同步處理影片任務
     """
+    task_temp_dir = TEMP_DIR / task_id
+    task_temp_dir.mkdir(exist_ok=True)
     try:
-        # 立即更新狀態：開始下載影片
+        # 立即更新狀態：開始處理
         tasks[task_id].update({
             "status": "processing",
-            "progress": 10,
-            "message": "正在下載影片..."
+            "progress": 5,
+            "message": "正在解析影片資訊..."
         })
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
@@ -270,29 +321,21 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         import asyncio
         await asyncio.sleep(0.1)
 
-        # 更新狀態：正在解析影片資訊
+        # 更新狀態：開始下載
         tasks[task_id].update({
-            "progress": 15,
-            "message": "正在解析影片資訊..."
+            "progress": 10,
+            "message": "正在下載影片（這可能需要較長時間）..."
         })
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
 
-        # 下載並轉換影片
-        audio_path, video_title = await video_processor.download_and_convert(url, TEMP_DIR)
+        # 下載並轉換影片（這是最耗時的步驟）
+        audio_path, video_title = await video_processor.download_and_convert(url, task_temp_dir)
 
         # 下載完成，更新狀態
         tasks[task_id].update({
-            "progress": 35,
-            "message": "影片下載完成，準備轉錄..."
-        })
-        save_tasks(tasks)
-        await broadcast_task_update(task_id, tasks[task_id])
-
-        # 更新狀態：轉錄中
-        tasks[task_id].update({
-            "progress": 40,
-            "message": "正在轉錄音訊..."
+            "progress": 30,
+            "message": "影片下載完成，正在轉錄音訊..."
         })
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
@@ -304,8 +347,9 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         try:
             short_id = task_id.replace("-", "")[:6]
             safe_title = _sanitize_title_for_filename(video_title)
-            raw_md_filename = f"raw_{{safe_title}}_{{short_id}}.md"
-            raw_md_path = TEMP_DIR / raw_md_filename
+            task_dir = create_task_dir(task_id)
+            raw_md_filename = f"raw_{safe_title}_{short_id}.md"
+            raw_md_path = task_dir / raw_md_filename
             with open(raw_md_path, "w", encoding="utf-8") as f:
                 content_raw = (raw_script or "") + f"\n\nsource: {url}\n"
                 f.write(content_raw)
@@ -321,14 +365,14 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
 
         # 更新狀態：最佳化轉錄文字
         tasks[task_id].update({
-            "progress": 55,
+            "progress": 45,
             "message": "正在最佳化轉錄文字..."
         })
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
 
-        # 最佳化轉錄文字：修正錯別字，按語意分段
-        script = await summarizer.optimize_transcript(raw_script)
+        # 最佳化轉錄文字：修正錯別字，按語意分段，並轉換為繁體中文
+        script = await summarizer.optimize_transcript(raw_script, target_language=summary_language)
 
         # 為轉錄文字加入標題，並在結尾加入來源連結
         script_with_title = f"# {video_title}\n\n{script}\n\nsource: {url}\n"
@@ -345,7 +389,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
             logger.info(f"需要翻譯: {detected_language} -> {summary_language}")
             # 更新狀態：產生翻譯
             tasks[task_id].update({
-                "progress": 70,
+                "progress": 65,
                 "message": "正在產生翻譯..."
             })
             save_tasks(tasks)
@@ -356,8 +400,8 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
             translation_with_title = f"# {video_title}\n\n{translation_content}\n\nsource: {url}\n"
 
             # 儲存翻譯到檔案
-            translation_filename = f"translation_{{safe_title}}_{{short_id}}.md"
-            translation_path = TEMP_DIR / translation_filename
+            translation_filename = f"translation_{safe_title}_{short_id}.md"
+            translation_path = task_dir / translation_filename
             async with aiofiles.open(translation_path, "w", encoding="utf-8") as f:
                 await f.write(translation_with_title)
         else:
@@ -365,7 +409,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
 
         # 更新狀態：產生摘要
         tasks[task_id].update({
-            "progress": 80,
+            "progress": 75,
             "message": "正在產生摘要..."
         })
         save_tasks(tasks)
@@ -376,25 +420,16 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         summary_with_source = summary + f"\n\nsource: {url}\n"
 
         # 儲存最佳化後的轉錄文字到檔案
-        script_filename = f"transcript_{{task_id}}.md"
-        script_path = TEMP_DIR / script_filename
+        script_filename = f"transcript_{safe_title}_{short_id}.md"
+        script_path = task_dir / script_filename
         async with aiofiles.open(script_path, "w", encoding="utf-8") as f:
             await f.write(script_with_title)
 
-        # 重新命名為新規則：transcript_標題_短ID.md
-        new_script_filename = f"transcript_{{safe_title}}_{{short_id}}.md"
-        new_script_path = TEMP_DIR / new_script_filename
-        try:
-            if script_path.exists():
-                script_path.rename(new_script_path)
-                script_path = new_script_path
-        except Exception as _:
-            # 如重新命名失敗，繼續使用原路徑
-            pass
+        # 檔案已經使用正確命名，不需要重新命名
 
         # 儲存摘要到檔案（summary_標題_短ID.md）
-        summary_filename = f"summary_{{safe_title}}_{{short_id}}.md"
-        summary_path = TEMP_DIR / summary_filename
+        summary_filename = f"summary_{safe_title}_{short_id}.md"
+        summary_path = task_dir / summary_filename
         async with aiofiles.open(summary_path, "w", encoding="utf-8") as f:
             await f.write(summary_with_source)
 
@@ -435,8 +470,12 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         if task_id in active_tasks:
             del active_tasks[task_id]
 
-        # 不要立即刪除暫存檔案！保留給使用者下載
-        # 檔案會在一定時間後自動清理或使用者手動清理
+        # 清理暫存目錄
+        try:
+            shutil.rmtree(task_temp_dir)
+            logger.info(f"已清理暫存目錄: {task_temp_dir}")
+        except Exception as e:
+            logger.error(f"清理暫存目錄失敗: {e}")
 
     except Exception as e:
         logger.error(f"任務 {task_id} 處理失敗: {str(e)}")
@@ -567,8 +606,24 @@ async def download_file(filename: str):
         if '..' in filename or '/' in filename or '\\' in filename:
             raise HTTPException(status_code=400, detail="檔名格式無效")
 
-        file_path = TEMP_DIR / filename
-        if not file_path.exists():
+        # 搜尋檔案：檢查所有任務目錄
+        file_path = None
+        
+        # 檢查所有任務目錄
+        for task_dir in TEMP_DIR.iterdir():
+            if task_dir.is_dir():
+                potential_path = task_dir / filename
+                if potential_path.exists():
+                    file_path = potential_path
+                    break
+        
+        # 如果沒找到，檢查 temp 根目錄（相容性）
+        if not file_path:
+            temp_file_path = TEMP_DIR / filename
+            if temp_file_path.exists():
+                file_path = temp_file_path
+        
+        if not file_path:
             raise HTTPException(status_code=404, detail="檔案不存在")
 
         return FileResponse(

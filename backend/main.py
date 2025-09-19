@@ -6,24 +6,21 @@
 # 依賴：FastAPI, yt-dlp, Faster-Whisper, OpenAI API等
 # =============================================================================
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import os
 import tempfile
 import asyncio
 import logging
 from pathlib import Path
-from typing import Optional
 import aiofiles
 import uuid
 import json
 import re
-import random
-import string
 from datetime import datetime
-import shutil
+import tempfile
 
 from .video_processor import VideoProcessor
 from .transcriber import Transcriber
@@ -57,10 +54,7 @@ TEMP_DIR.mkdir(exist_ok=True)
 
 # 根據任務創建目錄
 def create_task_dir(task_id: str):
-    from datetime import datetime
-    timestamp = datetime.now().strftime("%y%m%d%H%M%S")
-    task_dir_name = f"{timestamp}_{task_id}"
-    task_dir = TEMP_DIR / task_dir_name
+    task_dir = TEMP_DIR / task_id
     task_dir.mkdir(exist_ok=True)
     return task_dir
 
@@ -150,34 +144,12 @@ sse_connections = {}
 
 def generate_task_id() -> str:
     """
-    產生8碼唯一任務ID。
-
-    格式：HHMMSSXX（時分秒6碼 + 隨機2碼）
-    範例：110730A3, 110731K7, 110732B2
+    產生唯一任務ID。
 
     Returns:
-        str: 8碼唯一任務ID。
+        str: 標準 UUID4 格式（包含連字符，36字元）
     """
-    # 字元集：數字 + 大寫字母（62種可能）
-    chars = string.digits + string.ascii_uppercase
-
-    # 產生唯一ID（最多重試100次）
-    max_attempts = 100
-    for _ in range(max_attempts):
-        # 獲取當前時間 HHMMSS 格式
-        now = datetime.now().strftime("%H%M%S")
-
-        # 隨機產生2碼
-        random_part = ''.join(random.choices(chars, k=2))
-        task_id = f"{now}{random_part}"
-
-        # 檢查是否重複
-        if task_id not in tasks:
-            return task_id
-
-    # 如果重試次數用完，使用UUID作為fallback
-    logger.warning("無法產生唯一8碼ID，使用UUID fallback")
-    return str(uuid.uuid4())[:8].upper()
+    return str(uuid.uuid4())
 
 def _sanitize_title_for_filename(title: str) -> str:
     """
@@ -250,14 +222,16 @@ async def health_check():
 @app.post("/api/process-video")
 async def process_video(
     url: str = Form(...),
-    summary_language: str = Form(default="zh-tw")
+    summary_language: str = Form(default="zh-tw"),
+    summary_words: int = Form(default=150)
 ):
     """
     處理影片連結，返回任務ID。
 
     Args:
         url (str): 影片URL。
-        summary_language (str): 摘要語言，預設為"zh"。
+        summary_language (str): 摘要語言，預設為"zh-tw"。
+        summary_words (int): 摘要字數，預設為150字。
 
     Returns:
         dict: 包含任務ID和訊息的字典。
@@ -292,7 +266,7 @@ async def process_video(
         save_tasks(tasks)
         
         # 建立並追蹤非同步任務
-        task = asyncio.create_task(process_video_task(task_id, url, summary_language))
+        task = asyncio.create_task(process_video_task(task_id, url, summary_language, summary_words))
         active_tasks[task_id] = task
         
         return {"task_id": task_id, "message": "任務已建立，正在處理中..."}
@@ -301,7 +275,7 @@ async def process_video(
         logger.error(f"處理影片時出錯: {str(e)}")
         raise HTTPException(status_code=500, detail=f"處理失敗: {str(e)}")
 
-async def process_video_task(task_id: str, url: str, summary_language: str):
+async def process_video_task(task_id: str, url: str, summary_language: str, summary_words: int):
     """
     非同步處理影片任務
     """
@@ -345,10 +319,9 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
 
         # 將Whisper原始轉錄儲存為Markdown檔案，供下載/封存
         try:
-            short_id = task_id.replace("-", "")[:6]
             safe_title = _sanitize_title_for_filename(video_title)
             task_dir = create_task_dir(task_id)
-            raw_md_filename = f"raw_{safe_title}_{short_id}.md"
+            raw_md_filename = f"raw_{safe_title}_{task_id}.md"
             raw_md_path = task_dir / raw_md_filename
             with open(raw_md_path, "w", encoding="utf-8") as f:
                 content_raw = (raw_script or "") + f"\n\nsource: {url}\n"
@@ -400,7 +373,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
             translation_with_title = f"# {video_title}\n\n{translation_content}\n\nsource: {url}\n"
 
             # 儲存翻譯到檔案
-            translation_filename = f"translation_{safe_title}_{short_id}.md"
+            translation_filename = f"translation_{safe_title}_{task_id}.md"
             translation_path = task_dir / translation_filename
             async with aiofiles.open(translation_path, "w", encoding="utf-8") as f:
                 await f.write(translation_with_title)
@@ -416,11 +389,11 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         await broadcast_task_update(task_id, tasks[task_id])
         
         # 產生摘要
-        summary = await summarizer.summarize(script, summary_language, video_title)
+        summary = await summarizer.summarize(script, summary_language, video_title, summary_words)
         summary_with_source = summary + f"\n\nsource: {url}\n"
 
         # 儲存最佳化後的轉錄文字到檔案
-        script_filename = f"transcript_{safe_title}_{short_id}.md"
+        script_filename = f"transcript_{safe_title}_{task_id}.md"
         script_path = task_dir / script_filename
         async with aiofiles.open(script_path, "w", encoding="utf-8") as f:
             await f.write(script_with_title)
@@ -428,7 +401,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         # 檔案已經使用正確命名，不需要重新命名
 
         # 儲存摘要到檔案（summary_標題_短ID.md）
-        summary_filename = f"summary_{safe_title}_{short_id}.md"
+        summary_filename = f"summary_{safe_title}_{task_id}.md"
         summary_path = task_dir / summary_filename
         async with aiofiles.open(summary_path, "w", encoding="utf-8") as f:
             await f.write(summary_with_source)
@@ -443,7 +416,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
             "summary": summary_with_source,
             "script_path": str(script_path),
             "summary_path": str(summary_path),
-            "short_id": short_id,
+            "task_id": task_id,
             "safe_title": safe_title,
             "detected_language": detected_language,
             "summary_language": summary_language
@@ -470,12 +443,8 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         if task_id in active_tasks:
             del active_tasks[task_id]
 
-        # 清理暫存目錄
-        try:
-            shutil.rmtree(task_temp_dir)
-            logger.info(f"已清理暫存目錄: {task_temp_dir}")
-        except Exception as e:
-            logger.error(f"清理暫存目錄失敗: {e}")
+        # 保留任務目錄以供後續查詢
+        logger.info(f"任務目錄已保留: {task_temp_dir}")
 
     except Exception as e:
         logger.error(f"任務 {task_id} 處理失敗: {str(e)}")
@@ -687,6 +656,64 @@ async def get_active_tasks():
         "processing_urls": processing_count,
         "task_ids": list(active_tasks.keys())
     }
+
+
+@app.get("/api/task-result/{task_id}")
+async def get_task_result(task_id: str):
+    """
+    取得任務結果（轉錄、摘要等內容）。
+
+    Args:
+        task_id (str): 任務ID。
+
+    Returns:
+        dict: 任務結果資料，包含轉錄、摘要、原始文字等內容。
+
+    Raises:
+        HTTPException: 當任務目錄不存在時拋出404錯誤。
+    """
+    try:
+        # 搜尋任務目錄
+        task_dir = None
+        for dir_path in TEMP_DIR.iterdir():
+            if dir_path.is_dir() and task_id in dir_path.name:
+                task_dir = dir_path
+                break
+
+        if not task_dir or not task_dir.exists():
+            raise HTTPException(status_code=404, detail="任務結果不存在")
+
+        result = {"task_id": task_id, "files": {}}
+
+        # 讀取各種檔案內容
+        for file_path in task_dir.glob("*.md"):
+            file_name = file_path.name
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                # 根據檔案名稱分類
+                if file_name.startswith("transcript_"):
+                    result["files"]["transcript"] = content
+                elif file_name.startswith("summary_"):
+                    result["files"]["summary"] = content
+                elif file_name.startswith("raw_"):
+                    result["files"]["raw"] = content
+
+            except Exception as e:
+                logger.warning(f"無法讀取檔案 {file_name}: {e}")
+
+        # 檢查是否有音訊檔案
+        audio_files = list(task_dir.glob("*.m4a"))
+        if audio_files:
+            result["files"]["audio_filename"] = audio_files[0].name
+
+        return result
+
+    except Exception as e:
+        logger.error(f"取得任務結果失敗: {e}")
+        raise HTTPException(status_code=500, detail=f"取得結果失敗: {str(e)}")
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -1008,7 +1008,7 @@ Core requirements:
 
         return '\n\n'.join(basic_paragraphs)
 
-    async def summarize(self, transcript: str, target_language: str = "zh-tw", video_title: str = None) -> str:
+    async def summarize(self, transcript: str, target_language: str = "zh-tw", video_title: str = None, summary_words: int = 150) -> str:
         """
         產生影片轉錄的摘要
 
@@ -1016,6 +1016,7 @@ Core requirements:
             transcript: 轉錄文本
             target_language: 目標語言代碼
             video_title: 影片標題
+            summary_words: 摘要字數限制（預設150字）
 
         Returns:
             摘要文本（Markdown格式）
@@ -1023,7 +1024,7 @@ Core requirements:
         try:
             if not self.client:
                 logger.warning("OpenAI API不可用，產生備用摘要")
-                return self._generate_fallback_summary(transcript, target_language, video_title)
+                return self._generate_fallback_summary(transcript, target_language, video_title, summary_words)
 
             # 估算轉錄文本長度，決定是否需要分塊摘要
             estimated_tokens = self._estimate_tokens(transcript)
@@ -1031,17 +1032,17 @@ Core requirements:
 
             if estimated_tokens <= max_summarize_tokens:
                 # 短文本直接摘要
-                return await self._summarize_single_text(transcript, target_language, video_title)
+                return await self._summarize_single_text(transcript, target_language, video_title, summary_words)
             else:
                 # 長文本分塊摘要
                 logger.info(f"文本較長({estimated_tokens} tokens)，啟用分塊摘要")
-                return await self._summarize_with_chunks(transcript, target_language, video_title, max_summarize_tokens)
+                return await self._summarize_with_chunks(transcript, target_language, video_title, max_summarize_tokens, summary_words)
 
         except Exception as e:
             logger.error(f"產生摘要失敗: {str(e)}")
-            return self._generate_fallback_summary(transcript, target_language, video_title)
+            return self._generate_fallback_summary(transcript, target_language, video_title, summary_words)
 
-    async def _summarize_single_text(self, transcript: str, target_language: str, video_title: str = None) -> str:
+    async def _summarize_single_text(self, transcript: str, target_language: str, video_title: str = None, summary_words: int = 150) -> str:
         """
         對單個文本進行摘要
 
@@ -1062,6 +1063,7 @@ Summary Requirements:
 3. Include important discussions, viewpoints, and conclusions
 4. Use concise and clear language
 5. Appropriately preserve the speaker's expression style and key opinions
+6. **IMPORTANT: Limit the summary to approximately {summary_words} words/characters**
 
 Paragraph Organization Requirements (Core):
 1. **Organize by semantic and logical themes** - Start a new paragraph whenever the topic shifts, discussion focus changes, or when transitioning from one viewpoint to another
@@ -1079,6 +1081,7 @@ Format Requirements:
 {transcript}
 
 Requirements:
+- **Target length: approximately {summary_words} words/characters**
 - Focus on natural paragraphs, avoiding decorative headings
 - Cover all key ideas and arguments, prioritize the most important content
 - Ensure balanced coverage of both early and later content
@@ -1102,7 +1105,7 @@ Requirements:
 
         return self._format_summary_with_meta(summary, target_language, video_title)
 
-    async def _summarize_with_chunks(self, transcript: str, target_language: str, video_title: str, max_tokens: int) -> str:
+    async def _summarize_with_chunks(self, transcript: str, target_language: str, video_title: str, max_tokens: int, summary_words: int = 150) -> str:
         """
         分塊摘要長文本
 
@@ -1255,14 +1258,10 @@ Requirements:
         """
         為摘要加入標題和元資訊
         """
-        # 不加任何小標題/免責聲明，可保留影片標題作為一級標題
-        if video_title:
-            prefix = f"# {video_title}\n\n"
-        else:
-            prefix = ""
-        return prefix + summary
+        # 直接返回摘要內容，不加入影片標題
+        return summary
 
-    def _generate_fallback_summary(self, transcript: str, target_language: str, video_title: str = None) -> str:
+    def _generate_fallback_summary(self, transcript: str, target_language: str, video_title: str = None, summary_words: int = 150) -> str:
         """
         產生備用摘要（當OpenAI API不可用時）
 
@@ -1288,10 +1287,7 @@ Requirements:
         meta_labels = self._get_summary_labels(target_language)
         fallback_labels = self._get_fallback_labels(target_language)
 
-        # 直接使用影片標題作為主標題
-        title = video_title if video_title else "Summary"
-
-        summary = f"""# {title}
+        summary = f"""
 
 **{meta_labels['language_label']}:** {language_name}
 **{fallback_labels['notice']}:** {fallback_labels['api_unavailable']}

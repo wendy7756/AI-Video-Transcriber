@@ -61,7 +61,8 @@ def setup_environment():
         print("⚠️  警告: 未设置OPENAI_API_KEY环境变量")
         print("请设置环境变量: export OPENAI_API_KEY=your_api_key_here")
         return False
-        print("✅ 已设置OpenAI API Key")
+    
+    print("✅ 已设置OpenAI API Key")
     
     if not os.getenv("OPENAI_BASE_URL"):
         os.environ["OPENAI_BASE_URL"] = "https://oneapi.basevec.com/v1"
@@ -72,6 +73,7 @@ def setup_environment():
         os.environ["WHISPER_MODEL_SIZE"] = "base"
     
     print("🔑 OpenAI API已配置，摘要功能可用")
+    return True
 
 def main():
     """主函数"""

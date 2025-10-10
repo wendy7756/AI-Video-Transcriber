@@ -12,11 +12,12 @@
 
 ## ✨ 功能特性
 
-- 🎥 **多平台支持**: 支持YouTube、Bilibili、抖音等30+平台。
+- 🎥 **多平台支持**: 支持YouTube、Bilibili、抖音等30+平台
 - 🗣️ **智能转录**: 使用Faster-Whisper模型进行高精度语音转文字
 - 🤖 **AI文本优化**: 自动错别字修正、句子完整化和智能分段
 - 🌍 **多语言摘要**: 支持多种语言的智能摘要生成
-- ⚙️ **条件式翻译**：当所选总结语言与Whisper检测到的语言不一致时，自动调用GPT‑4o生成翻译
+- ⚡ **实时进度**: 实时进度跟踪和状态更新
+- ⚙️ **条件式翻译**: 当所选摘要语言与检测到的转录语言不一致时，自动调用GPT‑4o生成翻译
 - 📱 **移动适配**: 完美支持移动设备
 
 ## 🚀 快速开始
@@ -64,8 +65,8 @@ docker run -p 8000:8000 -e OPENAI_API_KEY="你的API密钥" ai-video-transcriber
 1. **安装Python依赖**（建议使用虚拟环境）
 ```bash
 # 创建并启用虚拟环境（macOS推荐，避免 PEP 668 系统限制）
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
@@ -85,9 +86,10 @@ sudo yum install ffmpeg
 3. **配置环境变量**（摘要/翻译功能需要）
 ```bash
 # 必需：启用智能摘要/翻译
-export OPENAI_API_KEY="你的_API_Key"
+export OPENAI_API_KEY="your_api_key_here"
 
 # 可选：如使用自建/代理的OpenAI兼容网关，按需设置
+export OPENAI_BASE_URL="https://oneapi.basevec.com/v1"
 ```
 
 ### 启动服务
@@ -98,11 +100,21 @@ python3 start.py
 
 服务启动后，打开浏览器访问 `http://localhost:8000`
 
+#### 生产模式（推荐用于长视频）
+
+为了避免在处理长视频时SSE连接断开，建议使用生产模式启动（禁用热重载）：
+
+```bash
+python3 start.py --prod
+```
+
+这样可以在长时间任务（30-60+分钟）中保持SSE连接稳定。
+
 #### 使用显式环境变量启动（示例）
 
 ```bash
-source .venv/bin/activate
-export OPENAI_API_KEY=你的_API_Key
+source venv/bin/activate
+export OPENAI_API_KEY=your_api_key_here
 # export OPENAI_BASE_URL=https://oneapi.basevec.com/v1  # 如使用自定义端点
 python3 start.py --prod
 ```
@@ -118,7 +130,8 @@ python3 start.py --prod
    - AI智能转录优化（错别字修正、句子完整化、智能分段）
    - 生成选定语言的AI摘要
 5. **查看结果**: 查看优化后的转录文本和智能摘要
-6. **下载文件**: 点击下载按钮保存Markdown格式的文件
+   - 如果转录语言 ≠ 所选摘要语言，会显示第三个标签页"翻译"，包含翻译后的转录文本
+6. **下载文件**: 点击下载按钮保存Markdown格式的文件（转录/翻译/摘要）
 
 ## 🛠️ 技术架构
 
@@ -191,7 +204,7 @@ A: 转录优化和摘要生成都需要OpenAI API密钥。如果未配置，系�
 
 ### Q: 出现 500 报错/白屏，是代码问题吗？
 A: 多数情况下是环境配置问题，请按以下清单排查：
-- 是否已激活虚拟环境：`source .venv/bin/activate`
+- 是否已激活虚拟环境：`source venv/bin/activate`
 - 依赖是否安装在虚拟环境中：`pip install -r requirements.txt`
 - 是否设置 `OPENAI_API_KEY`（启用摘要/翻译所必需）
 - 如使用自定义网关，`OPENAI_BASE_URL` 是否正确、网络可达
@@ -305,6 +318,40 @@ docker pull hello-world
 
 如果问题持续存在，尝试切换到不同的网络或VPN位置。
 
+## 🎯 支持的语言
+
+### 转录
+- 通过Whisper支持100+种语言
+- 自动语言检测
+- 主要语言具有高准确率
+
+### 摘要生成
+- 英语
+- 中文（简体）
+- 日语
+- 韩语
+- 西班牙语
+- 法语
+- 德语
+- 葡萄牙语
+- 俄语
+- 阿拉伯语
+- 以及更多...
+
+## 📈 性能提示
+
+- **硬件要求**:
+  - 最低配置: 4GB内存，双核CPU
+  - 推荐配置: 8GB内存，四核CPU
+  - 理想配置: 16GB内存，多核CPU，SSD存储
+
+- **处理时间预估**:
+  | 视频长度 | 预估时间 | 备注 |
+  |---------|---------|------|
+  | 1分钟 | 30秒-1分钟 | 取决于网络和硬件 |
+  | 5分钟 | 2-5分钟 | 推荐首次测试使用 |
+  | 15分钟 | 5-15分钟 | 适合日常使用 |
+
 ## 🤝 贡献指南
 
 欢迎提交Issue和Pull Request！
@@ -325,3 +372,7 @@ docker pull hello-world
 ## 📞 联系方式
 
 如有问题或建议，请提交Issue或联系Wendy。
+
+## ⭐ Star History
+
+如果您觉得这个项目有帮助，请考虑给它一个星标！

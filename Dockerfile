@@ -1,16 +1,16 @@
-# AI视频转录器 Docker镜像 - 使用更小的Alpine镜像
-FROM python:3.9-alpine
+# AI视频转录器 Docker镜像 - 使用标准镜像确保兼容性
+FROM python:3.9-slim
 
 # 设置工作目录
 WORKDIR /app
 
-# 安装系统依赖 - Alpine使用apk包管理器
-RUN apk update && apk add --no-cache \
+# 安装系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
     gcc \
-    musl-dev \
-    python3-dev
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 # 复制requirements.txt并安装Python依赖
 COPY requirements.txt .

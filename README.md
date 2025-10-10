@@ -64,8 +64,8 @@ docker run -p 8000:8000 -e OPENAI_API_KEY="your_api_key_here" ai-video-transcrib
 1. **Install Python Dependencies**
 ```bash
 # macOS (PEP 668) strongly recommends using a virtualenv
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
@@ -88,6 +88,8 @@ sudo yum install ffmpeg
 export OPENAI_API_KEY="your_api_key_here"
 
 # Optional: only if you use a custom OpenAI-compatible gateway
+export OPENAI_BASE_URL="https://oneapi.basevec.com/v1"
+```
 
 ### Start the Service
 
@@ -110,7 +112,7 @@ This keeps the SSE connection stable throughout long tasks (30–60+ min).
 #### Run with explicit env (example)
 
 ```bash
-source .venv/bin/activate
+source venv/bin/activate
 export OPENAI_API_KEY=your_api_key_here
 # export OPENAI_BASE_URL=https://oneapi.basevec.com/v1   # if using a custom endpoint
 python3 start.py --prod
@@ -200,7 +202,7 @@ A: Both transcript optimization and summary generation require an OpenAI API key
 
 ### Q: I get HTTP 500 errors when starting/using the service. Why?
 A: In most cases this is an environment configuration issue rather than a code bug. Please check:
-- Ensure a virtualenv is activated: `source .venv/bin/activate`
+- Ensure a virtualenv is activated: `source venv/bin/activate`
 - Install deps inside the venv: `pip install -r requirements.txt`
 - Set `OPENAI_API_KEY` (required for summary/translation)
 - If using a custom gateway, set `OPENAI_BASE_URL` correctly and ensure network access
@@ -310,7 +312,7 @@ curl -I https://api.openai.com
 
 # Test Docker Hub access
 docker pull hello-world
-``
+```
 
 ## 🎯 Supported Languages
 

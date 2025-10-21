@@ -2,52 +2,64 @@ import logging
 from openai import OpenAI
 from typing import Optional
 import re
+import os
 
 logger = logging.getLogger(__name__)
 
 class Translator:
-    """文本翻译器，使用GPT-4o进行高质量翻译"""
+    """文本翻译器，使用Ollama或OpenAI API进行高质量翻译"""
     
     def __init__(self):
         self.client = None
-        self._init_openai_client()
+        self.model_name = None
+        self._init_llm_client() # 修改为通用名称
         
         # 语言映射
         self.language_map = {
             "zh": "中文（简体）",
-            "zh-tw": "中文（繁体）", 
+            "zh-tw": "中文（繁体）",
             "en": "English",
             "ja": "日本語",
-            "ko": "한국어",
-            "fr": "Français",
-            "de": "Deutsch",
-            "es": "Español",
-            "it": "Italiano",
-            "pt": "Português",
-            "ru": "Русский",
-            "ar": "العربية",
-            "hi": "हिन्दी"
+            "ko": "韩国语", # 修正ko为韩语
+            "fr": "法语", # 修正fr为法语
+            "de": "德语", # 修正de为德语
+            "es": "西班牙语", # 修正es为西班牙语
+            "it": "意大利语", # 修正it为意大利语
+            "pt": "葡萄牙语", # 修正pt为葡萄牙语
+            "ru": "俄语", # 修正ru为俄语
+            "ar": "阿拉伯语", # 修正ar为阿拉伯语
+            "hi": "印地语"
         }
     
-    def _init_openai_client(self):
-        """初始化OpenAI客户端"""
+    def _init_llm_client(self): # 修改方法名
+        """初始化LLM客户端 (优先Ollama)"""
         try:
-            import os
-            api_key = os.getenv("OPENAI_API_KEY")
-            base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+            # 优先从环境变量获取Ollama配置
+            ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://xxx.xxx.xxx.xxx:xxxxx/v1") # 使用用户提供的地址
+            ollama_model_name = os.getenv("OLLAMA_MODEL_NAME", "xxxxx:xb") # 使用用户提供的模型
             
-            if not api_key:
-                logger.warning("未设置OPENAI_API_KEY环境变量")
-                return
+            if ollama_base_url and ollama_model_name:
+                self.client = OpenAI(api_key="ollama", base_url=ollama_base_url, timeout=300.0) # 增加超时时间
+                self.model_name = ollama_model_name
+                logger.info(f"Ollama客户端已初始化，使用自定义端点: {self.client.base_url}, 模型: {self.model_name}")
+            else:
+                # 如果没有Ollama配置，则回退到OpenAI API
+                api_key = os.getenv("OPENAI_API_KEY")
+                base_url = os.getenv("OPENAI_BASE_URL")
                 
-            self.client = OpenAI(
-                api_key=api_key,
-                base_url=base_url
-            )
-            logger.info("OpenAI客户端初始化成功")
+                if api_key:
+                    self.model_name = os.getenv("OPENAI_MODEL_NAME", "gpt-4o") # 默认OpenAI模型
+                    if base_url:
+                        self.client = OpenAI(api_key=api_key, base_url=base_url, timeout=300.0) # 增加超时时间
+                        logger.info(f"OpenAI客户端已初始化，使用自定义端点: {base_url}, 模型: {self.model_name}")
+                    else:
+                        self.client = OpenAI(api_key=api_key, timeout=300.0) # 增加超时时间
+                        logger.info(f"OpenAI客户端已初始化，使用默认OpenAI端点, 模型: {self.model_name}")
+                else:
+                    logger.warning("未设置OLLAMA_BASE_URL/OLLAMA_MODEL_NAME或OPENAI_API_KEY环境变量。翻译功能将不可用。")
             
         except Exception as e:
-            logger.error(f"初始化OpenAI客户端失败: {str(e)}")
+            logger.error(f"初始化LLM客户端失败: {str(e)}")
             self.client = None
     
     def _detect_source_language(self, text: str) -> str:
@@ -194,7 +206,7 @@ class Translator:
 
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=self.model_name if self.model_name else "gpt-4o",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -238,7 +250,7 @@ class Translator:
 
             try:
                 response = self.client.chat.completions.create(
-                    model="gpt-4o",
+                    model=self.model_name if self.model_name else "gpt-4o",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}

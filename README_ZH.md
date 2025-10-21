@@ -4,7 +4,7 @@
 
 中文 | [English](README.md)
 
-一款开源的AI视频转录和摘要工具，支持YouTube、Bilibili、抖音等30+平台。
+一款AI视频转录和摘要工具，支持YouTube、Tiktok、Bilibili等30+平台，**以及本地视频文件上传功能。**
 
 ![Interface](cn-video.png)
 
@@ -12,13 +12,14 @@
 
 ## ✨ 功能特性
 
-- 🎥 **多平台支持**: 支持YouTube、Bilibili、抖音等30+平台
-- 🗣️ **智能转录**: 使用Faster-Whisper模型进行高精度语音转文字
+- 🎥 **多平台支持**: 支持YouTube、Tiktok、Bilibili、以及其他30+平台。**支持直接上传本地视频文件。**
+- 🗣️ **智能转录**: 使用Faster-Whisper进行高精度语音转文字
 - 🤖 **AI文本优化**: 自动错别字修正、句子完整化和智能分段
 - 🌍 **多语言摘要**: 支持多种语言的智能摘要生成
 - ⚡ **实时进度**: 实时进度跟踪和状态更新
-- ⚙️ **条件式翻译**: 当所选摘要语言与检测到的转录语言不一致时，自动调用GPT‑4o生成翻译
+- ⚙️ **条件式翻译**: 当所选摘要语言与检测到的转录语言不一致时，系统自动调用LLM (OpenAI/Ollama) 进行翻译
 - 📱 **移动适配**: 完美支持移动设备
+- ✂️ **长视频分段**: 自动将长视频分段成20分钟的块进行处理，确保高效处理扩展内容。
 
 ## 🚀 快速开始
 
@@ -26,7 +27,7 @@
 
 - Python 3.8+
 - FFmpeg
-- 可选：OpenAI API密钥（用于智能摘要功能）
+- 可选：OpenAI API密钥（用于OpenAI AI功能）或 Ollama 服务（用于本地LLM功能）
 
 ### 安装方法
 
@@ -35,7 +36,7 @@
 
 ```bash
 # 克隆项目
-git clone https://github.com/wendy7756/AI-Video-Transcriber.git
+git clone https://github.com/tiandaoyuxi/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 
 # 运行安装脚本
@@ -47,24 +48,24 @@ chmod +x install.sh
 
 ```bash
 # 克隆项目
-git clone https://github.com/wendy7756/AI-Video-Transcriber.git
+git clone https://github.com/tiandaoyuxi/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 
 # 使用Docker Compose（最简单）
 cp .env.example .env
-# 编辑.env文件，设置你的OPENAI_API_KEY
+# 编辑.env文件，设置你的OPENAI_API_KEY 或 OLLAMA_BASE_URL/OLLAMA_MODEL_NAME
 docker-compose up -d
 
 # 或者直接使用Docker
 docker build -t ai-video-transcriber .
-docker run -p 8000:8000 -e OPENAI_API_KEY="你的API密钥" ai-video-transcriber
+docker run -p 8000:8000 --env-file .env ai-video-transcriber
 ```
 
 #### 方法三：手动安装
 
-1. **安装Python依赖**（建议使用虚拟环境）
+1. **安装Python依赖**
 ```bash
-# 创建并启用虚拟环境（macOS推荐，避免 PEP 668 系统限制）
+# macOS (PEP 668) 强烈建议使用虚拟环境
 python3 -m venv venv
 source venv/bin/activate
 python -m pip install --upgrade pip
@@ -83,13 +84,17 @@ sudo apt update && sudo apt install ffmpeg
 sudo yum install ffmpeg
 ```
 
-3. **配置环境变量**（摘要/翻译功能需要）
+3. **配置环境变量**
 ```bash
-# 必需：启用智能摘要/翻译
-export OPENAI_API_KEY="your_api_key_here"
-
-# 可选：如使用自建/代理的OpenAI兼容网关，按需设置
+# For OpenAI API
+export OPENAI_API_KEY="your_openai_api_key_here"
+# Optional: only if you use a custom OpenAI-compatible gateway
 export OPENAI_BASE_URL="https://oneapi.basevec.com/v1"
+export OPENAI_MODEL_NAME="gpt-4o" # Optional, default is gpt-4o
+
+# For Ollama (prioritized if set)
+export OLLAMA_BASE_URL="http://xxx.xxx.xxx.xxx:xxxxx/v1" # Your Ollama service address
+export OLLAMA_MODEL_NAME="xxxxx:xb" # Your preferred Ollama model
 ```
 
 ### 启动服务
@@ -114,21 +119,29 @@ python3 start.py --prod
 
 ```bash
 source venv/bin/activate
+# Example for OpenAI
 export OPENAI_API_KEY=your_api_key_here
-# export OPENAI_BASE_URL=https://oneapi.basevec.com/v1  # 如使用自定义端点
+# export OPENAI_BASE_URL=https://oneapi.basevec.com/v1   # if using a custom endpoint
+# export OPENAI_MODEL_NAME="gpt-4o"
+
+# Example for Ollama
+export OLLAMA_BASE_URL="http://xxx.xxx.xxx.xxx:xxxxx/v1"
+export OLLAMA_MODEL_NAME="xxxxx:xb"
+
 python3 start.py --prod
 ```
 
 ## 📖 使用指南
 
-1. **输入视频链接**: 在输入框中粘贴YouTube、Bilibili等平台的视频链接
+1. **输入视频**: 选择**粘贴视频URL** (来自YouTube、Bilibili或其他支持的平台) 或**上传本地视频文件**。
 2. **选择摘要语言**: 选择希望生成摘要的语言
 3. **开始处理**: 点击"开始"按钮
 4. **监控进度**: 观察实时处理进度，包含多个阶段：
-   - 视频下载和解析
+   - 视频下载/上传和解析
    - 使用Faster-Whisper进行音频转录
    - AI智能转录优化（错别字修正、句子完整化、智能分段）
    - 生成选定语言的AI摘要
+   - **注意**: 对于长视频，系统会自动将其分段成20分钟的块进行处理。
 5. **查看结果**: 查看优化后的转录文本和智能摘要
    - 如果转录语言 ≠ 所选摘要语言，会显示第三个标签页"翻译"，包含翻译后的转录文本
 6. **下载文件**: 点击下载按钮保存Markdown格式的文件（转录/翻译/摘要）
@@ -139,7 +152,7 @@ python3 start.py --prod
 - **FastAPI**: 现代化的Python Web框架
 - **yt-dlp**: 视频下载和处理
 - **Faster-Whisper**: 高效的语音转录
-- **OpenAI API**: 智能文本摘要
+- **LLM API (OpenAI/Ollama)**: 智能文本摘要和翻译
 
 ### 前端技术栈
 - **HTML5 + CSS3**: 响应式界面设计
@@ -160,23 +173,26 @@ AI-Video-Transcriber/
 │   ├── index.html          # 主页面
 │   └── app.js              # 前端逻辑
 ├── temp/                   # 临时文件目录
-├── Docker相关文件           # Docker部署
-│   ├── Dockerfile          # Docker镜像配置
-│   ├── docker-compose.yml  # Docker Compose配置
-│   └── .dockerignore       # Docker忽略规则
-├── .env.example        # 环境变量模板
-├── requirements.txt    # Python依赖
-└── start.py           # 启动脚本
-
+├── Dockerfile              # Docker镜像配置
+├── docker-compose.yml      # Docker Compose配置
+├── .dockerignore           # Docker忽略规则
+├── .env.example            # 环境变量模板
+├── requirements.txt        # Python依赖
+├── start.py               # 启动脚本
+└── README.md              # 项目文档
 ```
 
 ## ⚙️ 配置选项
 
 ### 环境变量
 
-| 变量名 | 描述 | 默认值 | 必需 |
-|--------|------|--------|------|
-| `OPENAI_API_KEY` | OpenAI API密钥 | - | 否 |
+| 变量 | 描述 | 默认值 | 必需 |
+|----------|-------------|---------|----------|
+| `OPENAI_API_KEY` | OpenAI API密钥 (如果未配置Ollama则使用) | - | 否 |
+| `OPENAI_BASE_URL` | 自定义OpenAI兼容API端点 (例如，用于自托管LLM或代理) | `https://api.openai.com/v1` | 否 |
+| `OPENAI_MODEL_NAME` | OpenAI模型名称 (例如，`gpt-4o`, `gpt-3.5-turbo`) | `gpt-4o` | 否 |
+| `OLLAMA_BASE_URL` | Ollama服务API端点 (例如，`http://localhost:11434/v1`) | - | 否 (但推荐用于本地LLM) |
+| `OLLAMA_MODEL_NAME` | Ollama模型名称 (例如，`llama3`, `xxxxx:xb`) | - | 否 (但推荐用于本地LLM) |
 | `HOST` | 服务器地址 | `0.0.0.0` | 否 |
 | `PORT` | 服务器端口 | `8000` | 否 |
 | `WHISPER_MODEL_SIZE` | Whisper模型大小 | `base` | 否 |
@@ -184,7 +200,7 @@ AI-Video-Transcriber/
 ### Whisper模型大小选项
 
 | 模型 | 参数量 | 英语专用 | 多语言 | 速度 | 内存占用 |
-|------|--------|----------|--------|------|----------|
+|-------|------------|--------------|--------------|-------|--------------|
 | tiny | 39 M | ✓ | ✓ | 快 | 低 |
 | base | 74 M | ✓ | ✓ | 中 | 低 |
 | small | 244 M | ✓ | ✓ | 中 | 中 |
@@ -197,22 +213,22 @@ AI-Video-Transcriber/
 A: 转录速度取决于视频长度、Whisper模型大小和硬件性能。可以尝试使用更小的模型（如tiny或base）来提高速度。
 
 ### Q: 支持哪些视频平台？
-A: 支持所有yt-dlp支持的平台，包括但不限于：YouTube、抖音、Bilibili、优酷、爱奇艺、腾讯视频等。
+A: 支持所有yt-dlp支持的平台，包括但不限于：YouTube、TikTok、Facebook、Instagram、Twitter、Bilibili、优酷、爱奇艺、腾讯视频等。
 
 ### Q: AI优化功能不可用怎么办？
-A: 转录优化和摘要生成都需要OpenAI API密钥。如果未配置，系统会提供Whisper的原始转录和简化版摘要。
+A: 转录优化和摘要生成都需要OpenAI API密钥或配置好的Ollama服务。如果两者都未配置，系统会提供Whisper的原始转录和简化版摘要。
 
 ### Q: 出现 500 报错/白屏，是代码问题吗？
 A: 多数情况下是环境配置问题，请按以下清单排查：
 - 是否已激活虚拟环境：`source venv/bin/activate`
 - 依赖是否安装在虚拟环境中：`pip install -r requirements.txt`
-- 是否设置 `OPENAI_API_KEY`（启用摘要/翻译所必需）
-- 如使用自定义网关，`OPENAI_BASE_URL` 是否正确、网络可达
+- 是否设置 `OPENAI_API_KEY` (如果使用OpenAI API) 或 `OLLAMA_BASE_URL`/`OLLAMA_MODEL_NAME` (如果使用Ollama)
+- 如使用自定义网关，`OPENAI_BASE_URL` 或 `OLLAMA_BASE_URL` 是否正确、网络可达
 - 是否已安装 FFmpeg：macOS `brew install ffmpeg` / Debian/Ubuntu `sudo apt install ffmpeg`
 - 8000 端口是否被占用；如被占用请关闭旧进程或更换端口
 
 ### Q: 如何处理长视频？
-A: 系统可以处理任意长度的视频，但处理时间会相应增加。建议对于超长视频使用较小的Whisper模型。
+A: 系统会自动将长于20分钟的视频分段成20分钟的块进行处理。这有助于缓解LLM上下文窗口和API超时问题。对于超长视频，建议使用较小的Whisper模型。
 
 ### Q: 如何使用Docker部署？
 A: Docker提供了最简单的部署方式：
@@ -224,10 +240,10 @@ A: Docker提供了最简单的部署方式：
 **快速开始：**
 ```bash
 # 克隆和配置
-git clone https://github.com/wendy7756/AI-Video-Transcriber.git
+git clone https://github.com/tiandaoyuxi/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 cp .env.example .env
-# 编辑.env文件设置你的OPENAI_API_KEY
+# 编辑.env文件设置你的OPENAI_API_KEY 或 OLLAMA_BASE_URL/OLLAMA_MODEL_NAME
 
 # 使用Docker Compose启动（推荐）
 docker-compose up -d
@@ -241,7 +257,7 @@ docker run -p 8000:8000 --env-file .env ai-video-transcriber
 - **端口冲突**：如果8000端口被占用，可改用 `-p 8001:8000`
 - **权限拒绝**：确保Docker Desktop正在运行且有适当权限
 - **构建失败**：检查磁盘空间（需要约2GB空闲空间）和网络连接
-- **容器无法启动**：验证.env文件存在且包含有效的OPENAI_API_KEY
+- **容器无法启动**：验证.env文件存在且包含有效的API密钥/Ollama配置。检查容器日志 (`docker logs <container_id>`)。
 
 **Docker常用命令：**
 ```bash
@@ -294,14 +310,14 @@ A: 如果在视频下载或API调用过程中遇到网络相关错误，请尝�
 
 **常见网络问题：**
 - 视频下载失败，出现"无法提取"或超时错误
-- OpenAI API调用返回连接超时或DNS解析失败
+- LLM API调用返回连接超时或DNS解析失败
 - Docker镜像拉取失败或极其缓慢
 
 **解决方案：**
 1. **切换VPN/代理**：尝试连接到不同的VPN服务器或更换代理设置
 2. **检查网络稳定性**：确保你的网络连接稳定
 3. **更换网络后重试**：更改网络设置后等待30-60秒再重试
-4. **使用备用端点**：如果使用自定义OpenAI端点，验证它们在你的网络环境下可访问
+4. **使用备用端点**：如果使用自定义LLM端点，验证它们在你的网络环境下可访问
 5. **Docker网络问题**：如果容器网络失败，重启Docker Desktop
 
 **快速网络测试：**
@@ -309,8 +325,8 @@ A: 如果在视频下载或API调用过程中遇到网络相关错误，请尝�
 # 测试视频平台访问
 curl -I https://www.youtube.com/
 
-# 测试OpenAI API访问（替换为你的端点）
-curl -I https://api.openai.com
+# 测试LLM API访问 (替换为你的端点)
+curl -I http://xxx.xxx.xxx.xxx:xxxxx/v1
 
 # 测试Docker Hub访问
 docker pull hello-world
@@ -347,10 +363,11 @@ docker pull hello-world
 
 - **处理时间预估**:
   | 视频长度 | 预估时间 | 备注 |
-  |---------|---------|------|
+  |-------------|----------------|-------|
   | 1分钟 | 30秒-1分钟 | 取决于网络和硬件 |
   | 5分钟 | 2-5分钟 | 推荐首次测试使用 |
   | 15分钟 | 5-15分钟 | 适合日常使用 |
+  | >20分钟 | 可变 | 自动分段成20分钟的块。总时间取决于块的数量和LLM处理速度。 |
 
 ## 🤝 贡献指南
 
@@ -363,11 +380,10 @@ docker pull hello-world
 5. 开启Pull Request 
 
 ## 致谢
-
+- [wendy7756]https://github.com/wendy7756/AI-Video-Transcriber
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) - 强大的视频下载工具
 - [Faster-Whisper](https://github.com/guillaumekln/faster-whisper) - 高效的Whisper实现
-- [FastAPI](https://fastapi.tiangolo.com/) - 现代化的Python Web框架
-- [OpenAI](https://openai.com/) - 智能文本处理API
+- [LLM API (OpenAI/Ollama)](https://openai.com/) - 智能文本摘要和翻译
 
 ## 📞 联系方式
 

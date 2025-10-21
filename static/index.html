@@ -406,6 +406,28 @@
                 margin-bottom: 20px;
             }
         }
+        /* 新增样式 */
+        .input-toggle {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .toggle-button {
+            background: var(--border-color);
+            color: var(--text-color);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .toggle-button.active {
+            background: var(--primary-color);
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -425,7 +447,12 @@
         <!-- 输入表单 -->
         <div class="form-card">
             <form id="videoForm">
-                <div class="form-group">
+                <div class="input-toggle">
+                    <button type="button" id="toggleUrlInput" class="toggle-button active" data-i18n="use_url">Use URL</button>
+                    <button type="button" id="toggleFileInput" class="toggle-button" data-i18n="upload_file">Upload File</button>
+                </div>
+
+                <div id="urlInputGroup" class="form-group">
                     <label for="videoUrl">
                         <i class="fas fa-link"></i> <span data-i18n="video_url">Video URL</span>
                     </label>
@@ -435,6 +462,13 @@
                            required>
                 </div>
                 
+                <div id="fileInputGroup" class="form-group" style="display: none;">
+                    <label for="videoFile">
+                        <i class="fas fa-upload"></i> <span data-i18n="upload_video">Upload Video File</span>
+                    </label>
+                    <input type="file" id="videoFile" class="form-control" accept="video/*">
+                </div>
+
                 <div class="form-row">
                     <div class="form-group">
                         <label for="summaryLanguage">

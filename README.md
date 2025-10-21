@@ -4,7 +4,7 @@
 
 English | [中文](README_ZH.md)
 
-An AI-powered video transcription and summarization tool that supports multiple video platforms including YouTube, Tiktok, Bilibili, and 30+ platforms.
+An AI-powered video transcription and summarization tool that supports multiple video platforms including YouTube, Tiktok, Bilibili, and 30+ platforms, **as well as local video file uploads.**
 
 ![Interface](en-video.png)
 
@@ -12,13 +12,14 @@ An AI-powered video transcription and summarization tool that supports multiple 
 
 ## ✨ Features
 
-- 🎥 **Multi-Platform Support**: Works with YouTube, Tiktok, Bilibili, and 30+ more
+- 🎥 **Multi-Platform Support**: Works with YouTube, Tiktok, Bilibili, and 30+ more. **Supports direct upload of local video files.**
 - 🗣️ **Intelligent Transcription**: High-accuracy speech-to-text using Faster-Whisper
 - 🤖 **AI Text Optimization**: Automatic typo correction, sentence completion, and intelligent paragraphing
 - 🌍 **Multi-Language Summaries**: Generate intelligent summaries in multiple languages
 - ⚡ **Real-Time Progress**: Live progress tracking and status updates
-- ⚙️ **Conditional Translation**: When the selected summary language differs from the detected transcript language, the system auto-translates with GPT‑4o
+- ⚙️ **Conditional Translation**: When the selected summary language differs from the detected transcript language, the system auto-translates with LLM (OpenAI/Ollama)
 - 📱 **Mobile-Friendly**: Perfect support for mobile devices
+- ✂️ **Long Video Segmentation**: Automatically segments long videos into 20-minute chunks for processing, ensuring efficient handling of extended content.
 
 ## 🚀 Quick Start
 
@@ -26,7 +27,7 @@ An AI-powered video transcription and summarization tool that supports multiple 
 
 - Python 3.8+
 - FFmpeg
-- Optional: OpenAI API key (for AI summary features)
+- Optional: OpenAI API key (for OpenAI AI features) or Ollama service (for local LLM features)
 
 ### Installation
 
@@ -34,7 +35,7 @@ An AI-powered video transcription and summarization tool that supports multiple 
 
 ```bash
 # Clone the repository
-git clone https://github.com/wendy7756/AI-Video-Transcriber.git
+git clone https://github.com/tiandaoyuxi/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 
 # Run installation script
@@ -46,17 +47,17 @@ chmod +x install.sh
 
 ```bash
 # Clone the repository
-git clone https://github.com/wendy7756/AI-Video-Transcriber.git
+git clone https://github.com/tiandaoyuxi/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 
 # Using Docker Compose (easiest)
 cp .env.example .env
-# Edit .env file and set your OPENAI_API_KEY
+# Edit .env file and set your OPENAI_API_KEY or OLLAMA_BASE_URL/OLLAMA_MODEL_NAME
 docker-compose up -d
 
 # Or using Docker directly
 docker build -t ai-video-transcriber .
-docker run -p 8000:8000 -e OPENAI_API_KEY="your_api_key_here" ai-video-transcriber
+docker run -p 8000:8000 --env-file .env ai-video-transcriber
 ```
 
 #### Method 3: Manual Installation
@@ -84,11 +85,15 @@ sudo yum install ffmpeg
 
 3. **Configure Environment Variables**
 ```bash
-# Required for AI summary/translation features
-export OPENAI_API_KEY="your_api_key_here"
-
+# For OpenAI API
+export OPENAI_API_KEY="your_openai_api_key_here"
 # Optional: only if you use a custom OpenAI-compatible gateway
 export OPENAI_BASE_URL="https://oneapi.basevec.com/v1"
+export OPENAI_MODEL_NAME="gpt-4o" # Optional, default is gpt-4o
+
+# For Ollama (prioritized if set)
+export OLLAMA_BASE_URL="http://xxx.xxx.xxx.xxx:xxxxx/v1" # Your Ollama service address
+export OLLAMA_MODEL_NAME="xxxxx:xb" # Your preferred Ollama model
 ```
 
 ### Start the Service
@@ -113,21 +118,29 @@ This keeps the SSE connection stable throughout long tasks (30–60+ min).
 
 ```bash
 source venv/bin/activate
+# Example for OpenAI
 export OPENAI_API_KEY=your_api_key_here
 # export OPENAI_BASE_URL=https://oneapi.basevec.com/v1   # if using a custom endpoint
+# export OPENAI_MODEL_NAME="gpt-4o"
+
+# Example for Ollama
+export OLLAMA_BASE_URL="http://xxx.xxx.xxx.xxx:xxxxx/v1"
+export OLLAMA_MODEL_NAME="xxxxx:xb"
+
 python3 start.py --prod
 ```
 
 ## 📖 Usage Guide
 
-1. **Enter Video URL**: Paste a video link from YouTube, Bilibili, or other supported platforms
+1. **Input Video**: Choose between **pasting a video URL** (from YouTube, Bilibili, or other supported platforms) or **uploading a local video file**.
 2. **Select Summary Language**: Choose the language for the generated summary
 3. **Start Processing**: Click the "Start" button
 4. **Monitor Progress**: Watch real-time progress through multiple stages:
-   - Video download and parsing
+   - Video download/upload and parsing
    - Audio transcription with Faster-Whisper
    - AI-powered transcript optimization (typo correction, sentence completion, intelligent paragraphing)
    - AI summary generation in selected language
+   - **Note**: For long videos, the system automatically segments them into 20-minute chunks for processing.
 5. **View Results**: Review the optimized transcript and intelligent summary
    - If transcript language ≠ selected summary language, a third tab “Translation” is shown containing a translated transcript
 6. **Download Files**: Click download buttons to save Markdown-formatted files (Transcript / Translation / Summary)
@@ -138,7 +151,7 @@ python3 start.py --prod
 - **FastAPI**: Modern Python web framework
 - **yt-dlp**: Video downloading and processing
 - **Faster-Whisper**: Efficient speech transcription
-- **OpenAI API**: Intelligent text summarization
+- **LLM API (OpenAI/Ollama)**: Intelligent text summarization and translation
 
 ### Frontend Stack
 - **HTML5 + CSS3**: Responsive interface design
@@ -174,7 +187,11 @@ AI-Video-Transcriber/
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `OPENAI_API_KEY` | OpenAI API key | - | Yes (for AI features) |
+| `OPENAI_API_KEY` | OpenAI API key (used if Ollama is not configured) | - | No |
+| `OPENAI_BASE_URL` | Custom OpenAI-compatible API endpoint (e.g., for self-hosted LLMs or proxies) | `https://api.openai.com/v1` | No |
+| `OPENAI_MODEL_NAME` | OpenAI model name (e.g., `gpt-4o`, `gpt-3.5-turbo`) | `gpt-4o` | No |
+| `OLLAMA_BASE_URL` | Ollama service API endpoint (e.g., `http://localhost:11434/v1`) | - | No (but recommended for local LLM) |
+| `OLLAMA_MODEL_NAME` | Ollama model name (e.g., `llama3`, `xxxxx:xb`) | - | No (but recommended for local LLM) |
 | `HOST` | Server address | `0.0.0.0` | No |
 | `PORT` | Server port | `8000` | No |
 | `WHISPER_MODEL_SIZE` | Whisper model size | `base` | No |
@@ -198,19 +215,19 @@ A: Transcription speed depends on video length, Whisper model size, and hardware
 A: All platforms supported by yt-dlp, including but not limited to: YouTube, TikTok, Facebook, Instagram, Twitter, Bilibili, Youku, iQiyi, Tencent Video, etc.
 
 ### Q: What if the AI optimization features are unavailable?
-A: Both transcript optimization and summary generation require an OpenAI API key. Without it, the system provides the raw transcript from Whisper and a simplified summary.
+A: Both transcript optimization and summary generation require either an OpenAI API key or a configured Ollama service. Without either, the system provides the raw transcript from Whisper and a simplified summary.
 
 ### Q: I get HTTP 500 errors when starting/using the service. Why?
 A: In most cases this is an environment configuration issue rather than a code bug. Please check:
 - Ensure a virtualenv is activated: `source venv/bin/activate`
 - Install deps inside the venv: `pip install -r requirements.txt`
-- Set `OPENAI_API_KEY` (required for summary/translation)
-- If using a custom gateway, set `OPENAI_BASE_URL` correctly and ensure network access
+- Set `OPENAI_API_KEY` (if using OpenAI API) or `OLLAMA_BASE_URL`/`OLLAMA_MODEL_NAME` (if using Ollama)
+- If using a custom gateway, ensure `OPENAI_BASE_URL` or `OLLAMA_BASE_URL` is set correctly and ensure network access
 - Install FFmpeg: `brew install ffmpeg` (macOS) / `sudo apt install ffmpeg` (Debian/Ubuntu)
 - If port 8000 is occupied, stop the old process or change `PORT`
 
 ### Q: How to handle long videos?
-A: The system can process videos of any length, but processing time will increase accordingly. For very long videos, consider using smaller Whisper models.
+A: The system automatically segments videos longer than 20 minutes into 20-minute chunks for processing. This helps mitigate issues with LLM context windows and API timeouts. For very long videos, consider using smaller Whisper models.
 
 ### Q: How to use Docker for deployment?
 A: Docker provides the easiest deployment method:
@@ -222,10 +239,10 @@ A: Docker provides the easiest deployment method:
 **Quick Start:**
 ```bash
 # Clone and setup
-git clone https://github.com/wendy7756/AI-Video-Transcriber.git
+git clone https://github.com/tiandaoyuxi/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 cp .env.example .env
-# Edit .env file to set your OPENAI_API_KEY
+# Edit .env file to set your OPENAI_API_KEY or OLLAMA_BASE_URL/OLLAMA_MODEL_NAME
 
 # Start with Docker Compose (recommended)
 docker-compose up -d
@@ -239,7 +256,7 @@ docker run -p 8000:8000 --env-file .env ai-video-transcriber
 - **Port conflict**: Change port mapping `-p 8001:8000` if 8000 is occupied
 - **Permission denied**: Ensure Docker Desktop is running and you have proper permissions
 - **Build fails**: Check disk space (need ~2GB free) and network connection
-- **Container won't start**: Verify .env file exists and contains valid OPENAI_API_KEY
+- **Container won't start**: Verify .env file exists and contains valid API keys/Ollama config. Check container logs (`docker logs <container_id>`).
 
 **Docker Commands:**
 ```bash
@@ -292,14 +309,14 @@ A: If you encounter network-related errors during video downloading or API calls
 
 **Common Network Issues:**
 - Video download fails with "Unable to extract" or timeout errors
-- OpenAI API calls return connection timeout or DNS resolution failures
+- LLM API calls return connection timeout or DNS resolution failures
 - Docker image pull fails or is extremely slow
 
 **Solutions:**
 1. **Switch VPN/Proxy**: Try connecting to a different VPN server or switch your proxy settings
 2. **Check Network Stability**: Ensure your internet connection is stable
 3. **Retry After Network Change**: Wait 30-60 seconds after changing network settings before retrying
-4. **Use Alternative Endpoints**: If using custom OpenAI endpoints, verify they're accessible from your network
+4. **Use Alternative Endpoints**: If using custom LLM endpoints, verify they're accessible from your network
 5. **Docker Network Issues**: Restart Docker Desktop if container networking fails
 
 **Quick Network Test:**
@@ -307,8 +324,8 @@ A: If you encounter network-related errors during video downloading or API calls
 # Test video platform access
 curl -I https://www.youtube.com/
 
-# Test OpenAI API access (replace with your endpoint)
-curl -I https://api.openai.com
+# Test LLM API access (replace with your endpoint)
+curl -I http://xxx.xxx.xxx.xxx:xxxxx/v1
 
 # Test Docker Hub access
 docker pull hello-world
@@ -347,6 +364,7 @@ docker pull hello-world
   | 1 minute | 30s-1 minute | Depends on network and hardware |
   | 5 minutes | 2-5 minutes | Recommended for first-time testing |
   | 15 minutes | 5-15 minutes | Suitable for regular use |
+  | >20 minutes | Variable | Automatically segmented into 20-minute chunks. Total time depends on number of chunks and LLM processing speed. |
 
 ## 🤝 Contributing
 
@@ -360,11 +378,10 @@ We welcome Issues and Pull Requests!
 
 
 ## Acknowledgments
-
+- [wendy7756]https://github.com/wendy7756/AI-Video-Transcriber
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) - Powerful video downloading tool
 - [Faster-Whisper](https://github.com/guillaumekln/faster-whisper) - Efficient Whisper implementation
-- [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
-- [OpenAI](https://openai.com/) - Intelligent text processing API
+- [LLM API (OpenAI/Ollama)](https://openai.com/) - Intelligent text summarization and translation
 
 ## 📞 Contact
 

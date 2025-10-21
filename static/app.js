@@ -4,6 +4,7 @@ class VideoTranscriber {
         this.eventSource = null;
         this.apiBase = 'http://localhost:8000/api';
         this.currentLanguage = 'en'; // 默认英文
+        this.inputMode = 'url'; // 'url' or 'file'
         
         // 智能进度模拟相关
         this.smartProgress = {
@@ -21,8 +22,11 @@ class VideoTranscriber {
             en: {
                 title: "AI Video Transcriber",
                 subtitle: "Supports automatic transcription and AI summary for YouTube, Tiktok, Bilibili and other platforms",
+                use_url: "Use URL", // 新增
+                upload_file: "Upload File", // 新增
                 video_url: "Video URL",
                 video_url_placeholder: "Enter YouTube, Tiktok, Bilibili or other platform video URLs...",
+                upload_video: "Upload Video File", // 新增
                 summary_language: "Summary Language",
                 start_transcription: "Start",
                 processing_progress: "Processing Progress",
@@ -49,13 +53,17 @@ class VideoTranscriber {
                 error_invalid_file_type: "Invalid file type",
                 error_file_not_found: "File not found",
                 error_download_failed: "Download failed: ",
-                error_no_file_to_download: "No file available for download"
+                error_no_file_to_download: "No file available for download",
+                error_no_video_input: "Please provide a video URL or upload a video file." // 新增
             },
             zh: {
                 title: "AI视频转录器",
                 subtitle: "支持YouTube、Tiktok、Bilibili等平台的视频自动转录和智能摘要",
+                use_url: "使用链接", // 新增
+                upload_file: "上传文件", // 新增
                 video_url: "视频链接",
                 video_url_placeholder: "请输入YouTube、Tiktok、Bilibili等平台的视频链接...",
+                upload_video: "上传视频文件", // 新增
                 summary_language: "摘要语言",
                 start_transcription: "开始转录",
                 processing_progress: "处理进度",
@@ -82,7 +90,8 @@ class VideoTranscriber {
                 error_invalid_file_type: "无效的文件类型",
                 error_file_not_found: "文件不存在",
                 error_download_failed: "下载文件失败: ",
-                error_no_file_to_download: "没有可下载的文件"
+                error_no_file_to_download: "没有可下载的文件",
+                error_no_video_input: "请提供视频链接或上传视频文件。" // 新增
             }
         };
         
@@ -95,8 +104,15 @@ class VideoTranscriber {
         // 表单元素
         this.form = document.getElementById('videoForm');
         this.videoUrlInput = document.getElementById('videoUrl');
+        this.videoFileInput = document.getElementById('videoFile'); // 新增
         this.summaryLanguageSelect = document.getElementById('summaryLanguage');
         this.submitBtn = document.getElementById('submitBtn');
+
+        // 输入模式切换元素
+        this.toggleUrlInputBtn = document.getElementById('toggleUrlInput'); // 新增
+        this.toggleFileInputBtn = document.getElementById('toggleFileInput'); // 新增
+        this.urlInputGroup = document.getElementById('urlInputGroup'); // 新增
+        this.fileInputGroup = document.getElementById('fileInputGroup'); // 新增
         
         // 进度元素
         this.progressSection = document.getElementById('progressSection');
@@ -170,6 +186,33 @@ class VideoTranscriber {
         this.langToggle.addEventListener('click', () => {
             this.toggleLanguage();
         });
+
+        // 输入模式切换按钮
+        this.toggleUrlInputBtn.addEventListener('click', () => this.switchInputMode('url'));
+        this.toggleFileInputBtn.addEventListener('click', () => this.switchInputMode('file'));
+    }
+
+    switchInputMode(mode) {
+        this.inputMode = mode;
+        if (mode === 'url') {
+            this.urlInputGroup.style.display = 'block';
+            this.fileInputGroup.style.display = 'none';
+            this.videoUrlInput.setAttribute('required', 'true');
+            this.videoFileInput.removeAttribute('required');
+            this.toggleUrlInputBtn.classList.add('active');
+            this.toggleFileInputBtn.classList.remove('active');
+            this.videoFileInput.value = ''; // 清空文件选择
+            this.videoUrlInput.focus(); // 聚焦到URL输入框
+        } else {
+            this.urlInputGroup.style.display = 'none';
+            this.fileInputGroup.style.display = 'block';
+            this.videoUrlInput.removeAttribute('required');
+            this.videoFileInput.setAttribute('required', 'true');
+            this.toggleUrlInputBtn.classList.remove('active');
+            this.toggleFileInputBtn.classList.add('active');
+            this.videoUrlInput.value = ''; // 清空URL输入
+        }
+        this.hideError(); // 切换模式时隐藏错误
     }
     
     initializeLanguage() {
@@ -223,12 +266,24 @@ class VideoTranscriber {
             return; // 如果按钮已禁用，直接返回
         }
         
-        const videoUrl = this.videoUrlInput.value.trim();
         const summaryLanguage = this.summaryLanguageSelect.value;
-        
-        if (!videoUrl) {
-            this.showError(this.t('error_invalid_url'));
-            return;
+        const formData = new FormData();
+        formData.append('summary_language', summaryLanguage);
+
+        if (this.inputMode === 'url') {
+            const videoUrl = this.videoUrlInput.value.trim();
+            if (!videoUrl) {
+                this.showError(this.t('error_invalid_url'));
+                return;
+            }
+            formData.append('url', videoUrl);
+        } else { // inputMode === 'file'
+            const videoFile = this.videoFileInput.files[0];
+            if (!videoFile) {
+                this.showError(this.t('error_no_video_input'));
+                return;
+            }
+            formData.append('video_file', videoFile);
         }
         
         try {
@@ -239,10 +294,6 @@ class VideoTranscriber {
             this.showProgress();
             
             // 发送转录请求
-            const formData = new FormData();
-            formData.append('url', videoUrl);
-            formData.append('summary_language', summaryLanguage);
-            
             const response = await fetch(`${this.apiBase}/process-video`, {
                 method: 'POST',
                 body: formData
@@ -777,14 +828,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 添加一些示例链接提示
     const urlInput = document.getElementById('videoUrl');
     urlInput.addEventListener('focus', () => {
-        if (!urlInput.value) {
+        if (!urlInput.value && window.transcriber.inputMode === 'url') {
             urlInput.placeholder = '例如: https://www.youtube.com/watch?v=... 或 https://www.bilibili.com/video/...';
         }
     });
     
     urlInput.addEventListener('blur', () => {
-        if (!urlInput.value) {
-            urlInput.placeholder = '请输入YouTube、Bilibili等平台的视频链接...';
+        if (!urlInput.value && window.transcriber.inputMode === 'url') {
+            urlInput.placeholder = window.transcriber.t('video_url_placeholder');
         }
     });
 });

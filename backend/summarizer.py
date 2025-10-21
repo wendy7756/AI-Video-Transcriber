@@ -6,26 +6,36 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 class Summarizer:
-    """文本总结器，使用OpenAI API生成多语言摘要"""
+    """文本总结器，使用Ollama或OpenAI API生成多语言摘要"""
     
     def __init__(self):
         """初始化总结器"""
-        # 从环境变量获取OpenAI API配置
-        api_key = os.getenv("OPENAI_API_KEY")
-        base_url = os.getenv("OPENAI_BASE_URL")
+        # 优先从环境变量获取Ollama配置
+        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://xxx.xxx.xxx.xxx:xxxxx/v1") # 使用用户提供的地址
+        ollama_model_name = os.getenv("OLLAMA_MODEL_NAME", "xxxxx:xb") # 使用用户提供的模型
         
-        if not api_key:
-            logger.warning("未设置OPENAI_API_KEY环境变量，将无法使用摘要功能")
+        self.client = None
+        self.model_name = None
         
-        if api_key:
-            if base_url:
-                self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
-                logger.info(f"OpenAI客户端已初始化，使用自定义端点: {base_url}")
-            else:
-                self.client = openai.OpenAI(api_key=api_key)
-                logger.info("OpenAI客户端已初始化，使用默认端点")
+        if ollama_base_url and ollama_model_name:
+            self.client = openai.OpenAI(api_key="ollama", base_url=ollama_base_url, timeout=600.0) # 增加超时时间
+            self.model_name = ollama_model_name
+            logger.info(f"Ollama客户端已初始化，使用自定义端点: {self.client.base_url}, 模型: {self.model_name}")
         else:
-            self.client = None
+            # 如果没有Ollama配置，则回退到OpenAI API
+            api_key = os.getenv("OPENAI_API_KEY")
+            base_url = os.getenv("OPENAI_BASE_URL")
+            
+            if api_key:
+                self.model_name = os.getenv("OPENAI_MODEL_NAME", "gpt-4o") # 默认OpenAI模型
+                if base_url:
+                    self.client = openai.OpenAI(api_key=api_key, base_url=base_url, timeout=600.0) # 增加超时时间
+                    logger.info(f"OpenAI客户端已初始化，使用自定义端点: {base_url}, 模型: {self.model_name}")
+                else:
+                    self.client = openai.OpenAI(api_key=api_key, timeout=600.0) # 增加超时时间
+                    logger.info(f"OpenAI客户端已初始化，使用默认OpenAI端点, 模型: {self.model_name}")
+            else:
+                logger.warning("未设置OLLAMA_BASE_URL/OLLAMA_MODEL_NAME或OPENAI_API_KEY环境变量。摘要和翻译功能将不可用。")
         
         # 支持的语言映射
         self.language_map = {
@@ -163,7 +173,7 @@ class Summarizer:
 请特别注意修复因时间戳分割导致的句子不完整问题，并进行合理的段落划分！"""
 
         response = self.client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=self.model_name if self.model_name else "gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -211,7 +221,7 @@ class Summarizer:
 
             try:
                 response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model=self.model_name if self.model_name else "gpt-3.5-turbo",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
@@ -299,7 +309,7 @@ class Summarizer:
 
         try:
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model=self.model_name if self.model_name else "gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
@@ -782,7 +792,7 @@ class Summarizer:
 重新分段后的文本："""
 
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=self.model_name if self.model_name else "gpt-4o",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -861,7 +871,7 @@ Core requirements:
 {text}"""
 
         response = self.client.chat.completions.create(
-            model="gpt-4o",
+            model=self.model_name if self.model_name else "gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -1034,7 +1044,7 @@ Requirements:
         
         # 调用OpenAI API
         response = self.client.chat.completions.create(
-            model="gpt-4o",
+            model=self.model_name if self.model_name else "gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -1077,7 +1087,7 @@ Avoid using any subheadings or decorative separators, output content only."""
 
             try:
                 response = self.client.chat.completions.create(
-                    model="gpt-4o",
+                    model=self.model_name if self.model_name else "gpt-4o",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
@@ -1172,7 +1182,7 @@ Requirements:
 - Form a complete content summary"""
 
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=self.model_name if self.model_name else "gpt-4o",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -1202,19 +1212,20 @@ Requirements:
             prefix = ""
         return prefix + summary
 
-        try:
-            resp = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                max_tokens=1200,
-                temperature=0.2,
-            )
-            return resp.choices[0].message.content
-        except Exception:
-            return text
+        # 移除不必要的代码
+        # try:
+        #     resp = self.client.chat.completions.create(
+        #         model="gpt-4o",
+        #         messages=[
+        #             {"role": "system", "content": system_prompt},
+        #             {"role": "user", "content": user_prompt},
+        #         ],
+        #         max_tokens=1200,
+        #         temperature=0.2,
+        #     )
+        #     return resp.choices[0].message.content
+        # except Exception:
+        #     return text
     
     def _generate_fallback_summary(self, transcript: str, target_language: str, video_title: str = None) -> str:
         """

@@ -98,8 +98,8 @@ async def broadcast_task_update(task_id: str, task_data: dict):
 
 # 启动时加载任务状态
 tasks = load_tasks()
-# 存储正在处理的URL，防止重复处理
-processing_urls = set()
+# 存储正在处理的URL/文件，防止重复处理
+processing_inputs = set()
 # 存储活跃的任务对象，用于控制和取消
 active_tasks = {}
 # 存储SSE连接，用于实时推送状态更新
@@ -123,26 +123,50 @@ async def read_root():
 
 @app.post("/api/process-video")
 async def process_video(
-    url: str = Form(...),
+    video_file: Optional[UploadFile] = File(None),
+    video_url: Optional[str] = Form(None, alias="url"),
     summary_language: str = Form(default="zh")
 ):
     """
-    处理视频链接，返回任务ID
+    处理视频链接或上传视频文件，返回任务ID
     """
+    if not video_file and not video_url:
+        raise HTTPException(status_code=400, detail="请提供视频文件或视频URL")
+
+    if video_file and video_url:
+        raise HTTPException(status_code=400, detail="不能同时提供视频文件和视频URL")
+
+    input_identifier = video_url if video_url else video_file.filename
+
     try:
-        # 检查是否已经在处理相同的URL
-        if url in processing_urls:
-            # 查找现有任务
+        # 检查是否已经在处理相同的输入
+        if input_identifier in processing_inputs:
             for tid, task in tasks.items():
-                if task.get("url") == url:
+                if task.get("input_identifier") == input_identifier:
                     return {"task_id": tid, "message": "该视频正在处理中，请等待..."}
             
         # 生成唯一任务ID
         task_id = str(uuid.uuid4())
         
-        # 标记URL为正在处理
-        processing_urls.add(url)
+        # 标记输入为正在处理
+        processing_inputs.add(input_identifier)
         
+        video_input_path = None
+        original_url = None
+
+        if video_file:
+            # 将上传的文件保存到临时目录
+            file_extension = Path(video_file.filename).suffix
+            video_input_path = TEMP_DIR / f"{task_id}{file_extension}"
+            async with aiofiles.open(video_input_path, "wb") as buffer:
+                while content := await video_file.read(1024 * 1024):  # 1MB chunks
+                    await buffer.write(content)
+            logger.info(f"文件 '{video_file.filename}' 已保存到 {video_input_path}")
+            original_url = f"file://{video_file.filename}" # 记录原始文件名作为URL
+        else: # video_url
+            video_input_path = video_url
+            original_url = video_url
+
         # 初始化任务状态
         tasks[task_id] = {
             "status": "processing",
@@ -151,12 +175,13 @@ async def process_video(
             "script": None,
             "summary": None,
             "error": None,
-            "url": url  # 保存URL用于去重
+            "input_identifier": input_identifier, # 保存输入标识用于去重
+            "original_url": original_url # 记录原始URL或文件名
         }
         save_tasks(tasks)
         
         # 创建并跟踪异步任务
-        task = asyncio.create_task(process_video_task(task_id, url, summary_language))
+        task = asyncio.create_task(process_video_task(task_id, video_input_path, summary_language, original_url))
         active_tasks[task_id] = task
         
         return {"task_id": task_id, "message": "任务已创建，正在处理中..."}
@@ -165,16 +190,17 @@ async def process_video(
         logger.error(f"处理视频时出错: {str(e)}")
         raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
 
-async def process_video_task(task_id: str, url: str, summary_language: str):
+async def process_video_task(task_id: str, video_input_path: str, summary_language: str, original_url: str):
     """
     异步处理视频任务
+    video_input_path 可以是URL或本地文件路径
     """
     try:
-        # 立即更新状态：开始下载视频
+        # 立即更新状态：开始下载/处理视频
         tasks[task_id].update({
             "status": "processing",
             "progress": 10,
-            "message": "正在下载视频..."
+            "message": "正在下载/处理视频..."
         })
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
@@ -191,8 +217,8 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
         
-        # 下载并转换视频
-        audio_path, video_title = await video_processor.download_and_convert(url, TEMP_DIR)
+        # 下载并转换视频 (现在 video_processor 返回音频文件路径列表)
+        audio_paths, video_title = await video_processor.download_and_convert(video_input_path, TEMP_DIR)
         
         # 下载完成，更新状态
         tasks[task_id].update({
@@ -202,17 +228,22 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
         
-        # 更新状态：转录中
-        tasks[task_id].update({
-            "progress": 40,
-            "message": "正在转录音频..."
-        })
-        save_tasks(tasks)
-        await broadcast_task_update(task_id, tasks[task_id])
+        # --- 分块转录 ---
+        all_raw_scripts = []
+        for i, audio_path in enumerate(audio_paths):
+            current_progress = 40 + int((i / len(audio_paths)) * 10) # 40% - 50% 用于转录
+            tasks[task_id].update({
+                "progress": current_progress,
+                "message": f"正在转录音频片段 {i+1}/{len(audio_paths)}..."
+            })
+            save_tasks(tasks)
+            await broadcast_task_update(task_id, tasks[task_id])
+            
+            raw_script_chunk = await transcriber.transcribe(audio_path)
+            all_raw_scripts.append(raw_script_chunk)
         
-        # 转录音频
-        raw_script = await transcriber.transcribe(audio_path)
-
+        raw_script = "\n\n".join(all_raw_scripts) # 合并所有片段的原始转录
+        
         # 将Whisper原始转录保存为Markdown文件，供下载/归档
         try:
             short_id = task_id.replace("-", "")[:6]
@@ -220,7 +251,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
             raw_md_filename = f"raw_{safe_title}_{short_id}.md"
             raw_md_path = TEMP_DIR / raw_md_filename
             with open(raw_md_path, "w", encoding="utf-8") as f:
-                content_raw = (raw_script or "") + f"\n\nsource: {url}\n"
+                content_raw = (raw_script or "") + f"\n\nsource: {original_url}\n"
                 f.write(content_raw)
 
             # 记录原始转录文件路径（仅保存文件名，实际路径位于TEMP_DIR）
@@ -244,7 +275,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         script = await summarizer.optimize_transcript(raw_script)
         
         # 为转录文本添加标题，并在结尾添加来源链接
-        script_with_title = f"# {video_title}\n\n{script}\n\nsource: {url}\n"
+        script_with_title = f"# {video_title}\n\n{script}\n\nsource: {original_url}\n"
         
         # 检查是否需要翻译
         detected_language = transcriber.get_detected_language(raw_script)
@@ -266,7 +297,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
             
             # 翻译转录文本
             translation_content = await translator.translate_text(script, summary_language, detected_language)
-            translation_with_title = f"# {video_title}\n\n{translation_content}\n\nsource: {url}\n"
+            translation_with_title = f"# {video_title}\n\n{translation_content}\n\nsource: {original_url}\n"
             
             # 保存翻译到文件
             translation_filename = f"translation_{safe_title}_{short_id}.md"
@@ -286,7 +317,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         
         # 生成摘要
         summary = await summarizer.summarize(script, summary_language, video_title)
-        summary_with_source = summary + f"\n\nsource: {url}\n"
+        summary_with_source = summary + f"\n\nsource: {original_url}\n"
         
         # 保存优化后的转录文本到文件
         script_filename = f"transcript_{task_id}.md"
@@ -341,8 +372,8 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         await broadcast_task_update(task_id, tasks[task_id])
         logger.info(f"最终状态已广播: {task_id}")
         
-        # 从处理列表中移除URL
-        processing_urls.discard(url)
+        # 从处理列表中移除输入
+        processing_inputs.discard(original_url if original_url.startswith("http") else f"file://{Path(original_url).name}")
         
         # 从活跃任务列表中移除
         if task_id in active_tasks:
@@ -353,8 +384,8 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
             
     except Exception as e:
         logger.error(f"任务 {task_id} 处理失败: {str(e)}")
-        # 从处理列表中移除URL
-        processing_urls.discard(url)
+        # 从处理列表中移除输入
+        processing_inputs.discard(original_url if original_url.startswith("http") else f"file://{Path(original_url).name}")
         
         # 从活跃任务列表中移除
         if task_id in active_tasks:
@@ -485,10 +516,10 @@ async def delete_task(task_id: str):
             logger.info(f"任务 {task_id} 已被取消")
         del active_tasks[task_id]
     
-    # 从处理URL列表中移除
-    task_url = tasks[task_id].get("url")
-    if task_url:
-        processing_urls.discard(task_url)
+    # 从处理URL/文件列表中移除
+    input_identifier = tasks[task_id].get("input_identifier")
+    if input_identifier:
+        processing_inputs.discard(input_identifier)
     
     # 删除任务记录
     del tasks[task_id]
@@ -500,10 +531,10 @@ async def get_active_tasks():
     获取当前活跃任务列表（用于调试）
     """
     active_count = len(active_tasks)
-    processing_count = len(processing_urls)
+    processing_count = len(processing_inputs)
     return {
         "active_tasks": active_count,
-        "processing_urls": processing_count,
+        "processing_inputs": processing_count,
         "task_ids": list(active_tasks.keys())
     }
 

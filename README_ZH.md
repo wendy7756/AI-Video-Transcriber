@@ -387,7 +387,7 @@ docker pull hello-world
 
 ## 📞 联系方式
 
-如有问题或建议，请提交Issue或联系Wendy。
+如有问题或建议，请提交Issue或联系Wendy or 我。
 
 ## ⭐ Star History
 

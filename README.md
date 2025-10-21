@@ -385,7 +385,7 @@ We welcome Issues and Pull Requests!
 
 ## 📞 Contact
 
-For questions or suggestions, please submit an Issue or contact Wendy.
+For questions or suggestions, please submit an Issue or contact Wendy or Me.
 
 ## ⭐ Star History
 

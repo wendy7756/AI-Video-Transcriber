@@ -20,6 +20,8 @@ An AI-powered video transcription and summarization tool that supports multiple 
 - ⚙️ **Conditional Translation**: When the selected summary language differs from the detected transcript language, the system auto-translates with GPT‑4o
 - 📱 **Mobile-Friendly**: Perfect support for mobile devices
 
+[![Star History Chart](https://api.star-history.com/svg?repos=wendy7756/AI-Video-Transcriber&type=Date)](https://star-history.com/#wendy7756/AI-Video-Transcriber&Date)
+
 ## 🚀 Quick Start
 
 ### Prerequisites

@@ -2,7 +2,7 @@ class VideoTranscriber {
     constructor() {
         this.currentTaskId = null;
         this.eventSource = null;
-        this.apiBase = 'http://localhost:8000/api';
+        this.apiBase = '/api';
         this.currentLanguage = 'en'; // 默认英文
         
         // 智能进度模拟相关

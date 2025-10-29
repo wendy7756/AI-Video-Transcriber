@@ -16,6 +16,7 @@ An AI-powered video transcription and summarization tool that supports multiple 
 - 🗣️ **Intelligent Transcription**: High-accuracy speech-to-text using Faster-Whisper
 - 🤖 **AI Text Optimization**: Automatic typo correction, sentence completion, and intelligent paragraphing
 - 🌍 **Multi-Language Summaries**: Generate intelligent summaries in multiple languages
+- ⚙️ **Configurable AI Models**: Use different models for different tasks (e.g., a "smart" model like `gpt-4o` for summaries, and a "fast" model like `gpt-3.5-turbo` for formatting). Fully customizable via environment variables.
 - ⚡ **Real-Time Progress**: Live progress tracking and status updates
 - ⚙️ **Conditional Translation**: When the selected summary language differs from the detected transcript language, the system auto-translates with GPT‑4o
 - 📱 **Mobile-Friendly**: Perfect support for mobile devices
@@ -91,6 +92,13 @@ export OPENAI_API_KEY="your_api_key_here"
 
 # Optional: only if you use a custom OpenAI-compatible gateway
 export OPENAI_BASE_URL="https://oneapi.basevec.com/v1"
+
+# Optional: Specify models (defaults are gpt-3.5-turbo and gpt-4o)
+
+# Use a fast, cheap model for formatting
+export FAST_MODEL="gpt-3.5-turbo"
+# Use a smart, powerful model for summarizing
+export SMART_MODEL="gpt-4o"
 ```
 
 ### Start the Service
@@ -177,6 +185,9 @@ AI-Video-Transcriber/
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `OPENAI_API_KEY` | OpenAI API key | - | Yes (for AI features) |
+| `OPENAI_BASE_URL` | Custom OpenAI-compatible gateway URL | - | No |
+| `FAST_MODEL` | AI model for **formatting/optimization** tasks (e.g., `gpt-3.5-turbo`, `GLM-4.5-Flash`) | `gpt-3.5-turbo` | No |
+| `SMART_MODEL` | AI model for **summarization/translation** tasks (e.g., `gpt-4o`, `GLM-4.5-Air`) | `gpt-4o` | No |
 | `HOST` | Server address | `0.0.0.0` | No |
 | `PORT` | Server port | `8000` | No |
 | `WHISPER_MODEL_SIZE` | Whisper model size | `base` | No |
@@ -201,6 +212,14 @@ A: All platforms supported by yt-dlp, including but not limited to: YouTube, Tik
 
 ### Q: What if the AI optimization features are unavailable?
 A: Both transcript optimization and summary generation require an OpenAI API key. Without it, the system provides the raw transcript from Whisper and a simplified summary.
+
+### Q: How do I use different AI models (like GLM, Llama, or other OpenAI models)?
+A: The system is designed to use two different models to balance cost and quality. You can configure them using environment variables:
+
+- `FAST_MODEL`: Used for high-volume, repetitive tasks like typo correction and paragraph formatting. It defaults to `gpt-3.5-turbo`.
+- `SMART_MODEL`: Used for complex, comprehension tasks like summarization, integration, and translation. It defaults to `gpt-4o`.
+
+You can set these to any model ID (e.g., `GLM-4.5-Flash`, `GLM-4.5-Air`) that is compatible with your `OPENAI_BASE_URL` endpoint.
 
 ### Q: I get HTTP 500 errors when starting/using the service. Why?
 A: In most cases this is an environment configuration issue rather than a code bug. Please check:

@@ -16,6 +16,7 @@
 - 🗣️ **智能转录**: 使用Faster-Whisper模型进行高精度语音转文字
 - 🤖 **AI文本优化**: 自动错别字修正、句子完整化和智能分段
 - 🌍 **多语言摘要**: 支持多种语言的智能摘要生成
+- ⚙️ **可配置AI模型**: 允许为不同任务配置不同模型（例如：使用 `gpt-4o` 这样的“智能模型”进行摘要，使用 `gpt-3.5-turbo` 这样的“快速模型”进行格式化）。完全可通过环境变量自定义。
 - ⚡ **实时进度**: 实时进度跟踪和状态更新
 - ⚙️ **条件式翻译**: 当所选摘要语言与检测到的转录语言不一致时，自动调用GPT‑4o生成翻译
 - 📱 **移动适配**: 完美支持移动设备
@@ -90,6 +91,12 @@ export OPENAI_API_KEY="your_api_key_here"
 
 # 可选：如使用自建/代理的OpenAI兼容网关，按需设置
 export OPENAI_BASE_URL="https://oneapi.basevec.com/v1"
+
+# 可选：指定AI模型 (默认为 gpt-3.5-turbo 和 gpt-4o)
+# 使用快速、便宜的模型进行格式化
+export FAST_MODEL="gpt-3.5-turbo"
+# 使用智能、强大的模型进行摘要
+export SMART_MODEL="gpt-4o"
 ```
 
 ### 启动服务
@@ -176,7 +183,10 @@ AI-Video-Transcriber/
 
 | 变量名 | 描述 | 默认值 | 必需 |
 |--------|------|--------|------|
-| `OPENAI_API_KEY` | OpenAI API密钥 | - | 否 |
+| `OPENAI_API_KEY` | OpenAI API密钥 | - | 否 (AI功能需) |
+| `OPENAI_BASE_URL` | 自定义OpenAI兼容网关 | - | 否 |
+| `FAST_MODEL` | 用于**格式化/优化**任务的AI模型 (如 `gpt-3.5-turbo`, `GLM-4.5-Flash`) | `gpt-3.5-turbo` | 否 |
+| `SMART_MODEL` | 用于**摘要/翻译**任务的AI模型 (如 `gpt-4o`, `GLM-4.5-Air`) | `gpt-4o` | 否 |
 | `HOST` | 服务器地址 | `0.0.0.0` | 否 |
 | `PORT` | 服务器端口 | `8000` | 否 |
 | `WHISPER_MODEL_SIZE` | Whisper模型大小 | `base` | 否 |
@@ -201,6 +211,15 @@ A: 支持所有yt-dlp支持的平台，包括但不限于：YouTube、抖音、B
 
 ### Q: AI优化功能不可用怎么办？
 A: 转录优化和摘要生成都需要OpenAI API密钥。如果未配置，系统会提供Whisper的原始转录和简化版摘要。
+
+### Q: 我如何使用不同的AI模型（比如智谱 GLM、Llama 或其他 OpenAI 模型）？
+
+A: 本系统设计用于平衡成本和质量，允许您使用两个不同的模型。您可以通过环境变量配置它们：
+
+- `FAST_MODEL`: 用于处理高频、重复性的任务，如修正错别字和格式化段落。默认使用 `gpt-3.5-turbo`。
+- `SMART_MODEL`: 用于处理复杂的、需要理解的任务，如生成摘要、整合内容和翻译。默认使用 `gpt-4o`。
+
+您可以将这两个变量设置为您 `OPENAI_BASE_URL` 接口所支持的任何模型 ID（例如 `GLM-4.5-Flash` 或 `GLM-4.5-Air`）。
 
 ### Q: 出现 500 报错/白屏，是代码问题吗？
 A: 多数情况下是环境配置问题，请按以下清单排查：

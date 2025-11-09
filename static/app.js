@@ -4,6 +4,9 @@ class VideoTranscriber {
         this.eventSource = null;
         this.apiBase = 'http://localhost:8000/api';
         this.currentLanguage = 'en'; // 默认英文
+        this.latestTaskData = null;
+        this.exportReady = false;
+        this.exportPanelVisible = false;
         
         // 智能进度模拟相关
         this.smartProgress = {
@@ -49,7 +52,27 @@ class VideoTranscriber {
                 error_invalid_file_type: "Invalid file type",
                 error_file_not_found: "File not found",
                 error_download_failed: "Download failed: ",
-                error_no_file_to_download: "No file available for download"
+                error_no_file_to_download: "No file available for download",
+                export_primary: "Export",
+                export_title: "Export Options",
+                export_content_type: "Content",
+                export_format_label: "Format",
+                export_format_markdown: "Markdown",
+                export_format_txt: "Text",
+                export_format_docx: "DOCX",
+                export_format_pdf: "PDF",
+                export_include_timestamps: "Include timestamps",
+                export_timestamp_hint: "Only applies to transcript exports.",
+                export_timestamp_hint_disabled: "Timestamps can only be added to transcripts.",
+                export_include_header: "Include header",
+                export_header_hint: "Adds detected language / probability section.",
+                export_header_hint_disabled: "Header is only available for transcripts.",
+                export_translation_unavailable: "Translation result unavailable for this task.",
+                export_cancel: "Cancel",
+                export_download: "Download",
+                export_downloading: "Preparing file...",
+                export_error: "Export failed: ",
+                export_not_ready: "Export is unavailable before processing finishes."
             },
             zh: {
                 title: "AI视频转录器",
@@ -82,7 +105,27 @@ class VideoTranscriber {
                 error_invalid_file_type: "无效的文件类型",
                 error_file_not_found: "文件不存在",
                 error_download_failed: "下载文件失败: ",
-                error_no_file_to_download: "没有可下载的文件"
+                error_no_file_to_download: "没有可下载的文件",
+                export_primary: "导出",
+                export_title: "导出选项",
+                export_content_type: "导出内容",
+                export_format_label: "导出格式",
+                export_format_markdown: "Markdown",
+                export_format_txt: "纯文本",
+                export_format_docx: "DOCX",
+                export_format_pdf: "PDF",
+                export_include_timestamps: "包含时间戳",
+                export_timestamp_hint: "仅在导出转录文本时生效。",
+                export_timestamp_hint_disabled: "时间戳仅适用于转录文本。",
+                export_include_header: "包含头部信息",
+                export_header_hint: "包含语言检测与置信度。",
+                export_header_hint_disabled: "头部信息仅适用于转录文本。",
+                export_translation_unavailable: "当前任务没有翻译结果。",
+                export_cancel: "取消",
+                export_download: "下载",
+                export_downloading: "正在准备文件...",
+                export_error: "导出失败：",
+                export_not_ready: "任务完成前无法导出。"
             }
         };
         
@@ -113,9 +156,18 @@ class VideoTranscriber {
         this.scriptContent = document.getElementById('scriptContent');
         this.translationContent = document.getElementById('translationContent');
         this.summaryContent = document.getElementById('summaryContent');
-        this.downloadScriptBtn = document.getElementById('downloadScript');
-        this.downloadTranslationBtn = document.getElementById('downloadTranslation');
-        this.downloadSummaryBtn = document.getElementById('downloadSummary');
+        this.exportBtn = document.getElementById('exportBtn');
+        this.exportPanel = document.getElementById('exportPanel');
+        this.closeExportPanelBtn = document.getElementById('closeExportPanel');
+        this.cancelExportBtn = document.getElementById('cancelExportBtn');
+        this.confirmExportBtn = document.getElementById('confirmExportBtn');
+        this.exportContentSelect = document.getElementById('exportContentType');
+        this.exportFormatInputs = document.querySelectorAll('input[name="exportFormat"]');
+        this.exportTimestampCheckbox = document.getElementById('exportIncludeTimestamps');
+        this.exportHeaderCheckbox = document.getElementById('exportIncludeHeader');
+        this.translationHint = document.getElementById('translationHint');
+        this.timestampHint = document.getElementById('timestampHint');
+        this.headerHint = document.getElementById('headerHint');
         this.translationTabBtn = document.getElementById('translationTabBtn');
         
         // 调试：检查元素是否正确初始化
@@ -131,6 +183,10 @@ class VideoTranscriber {
         // 语言切换按钮
         this.langToggle = document.getElementById('langToggle');
         this.langText = document.getElementById('langText');
+
+        if (this.exportBtn) {
+            this.exportBtn.disabled = true;
+        }
     }
     
     bindEvents() {
@@ -147,24 +203,24 @@ class VideoTranscriber {
             });
         });
         
-        // 下载按钮
-        if (this.downloadScriptBtn) {
-            this.downloadScriptBtn.addEventListener('click', () => {
-                this.downloadFile('script');
-            });
+        // 导出按钮
+        if (this.exportBtn) {
+            this.exportBtn.addEventListener('click', () => this.toggleExportPanel());
         }
-        
-        if (this.downloadTranslationBtn) {
-            this.downloadTranslationBtn.addEventListener('click', () => {
-                this.downloadFile('translation');
-            });
+        if (this.closeExportPanelBtn) {
+            this.closeExportPanelBtn.addEventListener('click', () => this.closeExportPanel());
         }
-        
-        if (this.downloadSummaryBtn) {
-            this.downloadSummaryBtn.addEventListener('click', () => {
-                this.downloadFile('summary');
-            });
+        if (this.cancelExportBtn) {
+            this.cancelExportBtn.addEventListener('click', () => this.closeExportPanel());
         }
+        if (this.confirmExportBtn) {
+            this.confirmExportBtn.addEventListener('click', () => this.handleExportDownload());
+        }
+        if (this.exportContentSelect) {
+            this.exportContentSelect.addEventListener('change', () => this.handleExportContentChange());
+        }
+        this.boundDocumentClick = (event) => this.handleDocumentClick(event);
+        document.addEventListener('click', this.boundDocumentClick);
         
         // 语言切换按钮
         this.langToggle.addEventListener('click', () => {
@@ -191,6 +247,7 @@ class VideoTranscriber {
         
         // 更新页面文本
         this.updatePageText();
+        this.handleExportContentChange();
         
         // 更新HTML lang属性
         document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
@@ -602,8 +659,7 @@ class VideoTranscriber {
             summaryLanguage: summaryLanguage,
             languagesDifferent: detectedLanguage !== summaryLanguage,
             shouldShowTranslation: shouldShowTranslation,
-            translationTabBtn: !!this.translationTabBtn,
-            downloadTranslationBtn: !!this.downloadTranslationBtn
+            translationTabBtn: !!this.translationTabBtn
         });
         
         // 调试：检查DOM元素（多种方式）
@@ -634,9 +690,6 @@ class VideoTranscriber {
                 this.translationTabBtn.style.visibility = 'visible';
                 console.log('[DEBUG] 🎯 翻译按钮样式已设置:', this.translationTabBtn.style.display);
             }
-            if (this.downloadTranslationBtn) {
-                this.downloadTranslationBtn.style.display = 'inline-flex';
-            }
             if (this.translationContent) {
                 this.translationContent.innerHTML = marked.parse(safeTranslation);
             }
@@ -646,10 +699,19 @@ class VideoTranscriber {
             if (this.translationTabBtn) {
                 this.translationTabBtn.style.display = 'none';
             }
-            if (this.downloadTranslationBtn) {
-                this.downloadTranslationBtn.style.display = 'none';
-            }
         }
+
+        this.latestTaskData = {
+            hasTranslation: !!shouldShowTranslation,
+            detectedLanguage,
+            summaryLanguage
+        };
+        this.updateExportAvailability(!!shouldShowTranslation);
+        this.exportReady = true;
+        if (this.exportBtn) {
+            this.exportBtn.disabled = false;
+        }
+        this.handleExportContentChange();
         
         // 显示结果区域
         this.resultsSection.style.display = 'block';
@@ -663,8 +725,53 @@ class VideoTranscriber {
         }
     }
     
+    updateExportAvailability(hasTranslation) {
+        if (!this.exportContentSelect) return;
+        const translationOption = this.exportContentSelect.querySelector('option[value="translation"]');
+        if (translationOption) {
+            translationOption.disabled = !hasTranslation;
+            translationOption.hidden = !hasTranslation;
+        }
+        
+        if (!hasTranslation && this.exportContentSelect.value === 'translation') {
+            this.exportContentSelect.value = 'transcript';
+        }
+        
+        if (this.translationHint) {
+            this.translationHint.style.display = hasTranslation ? 'none' : 'block';
+        }
+    }
+    
+    resetExportAvailability() {
+        this.exportReady = false;
+        this.latestTaskData = null;
+        if (this.exportBtn) {
+            this.exportBtn.disabled = true;
+        }
+        if (this.exportContentSelect) {
+            this.exportContentSelect.value = 'transcript';
+        }
+        if (this.exportTimestampCheckbox) {
+            this.exportTimestampCheckbox.checked = false;
+            this.exportTimestampCheckbox.disabled = false;
+        }
+        if (this.exportHeaderCheckbox) {
+            this.exportHeaderCheckbox.checked = false;
+            this.exportHeaderCheckbox.disabled = false;
+        }
+        if (this.headerHint) {
+            this.headerHint.textContent = this.t('export_header_hint');
+        }
+        if (this.translationHint) {
+            this.translationHint.style.display = 'none';
+        }
+        this.closeExportPanel();
+        this.handleExportContentChange();
+    }
+    
     hideResults() {
         this.resultsSection.style.display = 'none';
+        this.resetExportAvailability();
     }
     
     switchTab(tabName) {
@@ -682,64 +789,173 @@ class VideoTranscriber {
         }
     }
     
-    async downloadFile(fileType) {
+    toggleExportPanel() {
+        if (!this.exportPanel || !this.exportBtn) return;
+        if (!this.exportReady) {
+            this.showError(this.t('export_not_ready'));
+            return;
+        }
+        if (this.exportPanelVisible) {
+            this.closeExportPanel();
+        } else {
+            this.openExportPanel();
+        }
+    }
+    
+    openExportPanel() {
+        if (!this.exportPanel) return;
+        this.exportPanel.classList.add('active');
+        this.exportPanelVisible = true;
+        this.handleExportContentChange();
+    }
+    
+    closeExportPanel() {
+        if (!this.exportPanel) return;
+        this.exportPanel.classList.remove('active');
+        this.exportPanelVisible = false;
+        if (this.confirmExportBtn) {
+            this.confirmExportBtn.disabled = false;
+            this.confirmExportBtn.innerHTML = `<i class="fas fa-download"></i> ${this.t('export_download')}`;
+        }
+    }
+    
+    handleDocumentClick(event) {
+        if (!this.exportPanelVisible) return;
+        if (!this.exportPanel || !this.exportBtn) return;
+        const withinPanel = this.exportPanel.contains(event.target);
+        const onButton = this.exportBtn.contains(event.target);
+        if (!withinPanel && !onButton) {
+            this.closeExportPanel();
+        }
+    }
+    
+    handleExportContentChange() {
+        if (!this.exportContentSelect) return;
+        const isTranscript = this.exportContentSelect.value === 'transcript';
+
+        if (this.exportTimestampCheckbox && this.timestampHint) {
+            this.exportTimestampCheckbox.disabled = !isTranscript;
+            if (!isTranscript) {
+                this.exportTimestampCheckbox.checked = false;
+            }
+            const hintKey = isTranscript ? 'export_timestamp_hint' : 'export_timestamp_hint_disabled';
+            this.timestampHint.textContent = this.t(hintKey);
+        }
+
+        if (this.exportHeaderCheckbox && this.headerHint) {
+            this.exportHeaderCheckbox.disabled = !isTranscript;
+            if (!isTranscript) {
+                this.exportHeaderCheckbox.checked = false;
+            }
+            const headerKey = isTranscript ? 'export_header_hint' : 'export_header_hint_disabled';
+            this.headerHint.textContent = this.t(headerKey);
+        }
+    }
+    
+    getSelectedExportFormat() {
+        if (!this.exportFormatInputs) {
+            return 'markdown';
+        }
+        const selected = Array.from(this.exportFormatInputs).find(input => input.checked);
+        return selected ? selected.value : 'markdown';
+    }
+    
+    async handleExportDownload() {
         if (!this.currentTaskId) {
             this.showError(this.t('error_no_file_to_download'));
             return;
         }
         
+        const contentType = this.exportContentSelect ? this.exportContentSelect.value : 'transcript';
+        if (contentType === 'translation' && !(this.latestTaskData?.hasTranslation)) {
+            this.showError(this.t('export_translation_unavailable'));
+            return;
+        }
+        
+        const exportFormat = this.getSelectedExportFormat();
+        const includeTimestamps = this.exportTimestampCheckbox && this.exportTimestampCheckbox.checked;
+        const includeHeader = this.exportHeaderCheckbox && this.exportHeaderCheckbox.checked;
+        
         try {
-            // 首先获取任务状态，获得实际文件名
-            const taskResponse = await fetch(`${this.apiBase}/task-status/${this.currentTaskId}`);
-            if (!taskResponse.ok) {
-                throw new Error('获取任务状态失败');
+            if (this.confirmExportBtn) {
+                this.confirmExportBtn.disabled = true;
+                this.confirmExportBtn.innerHTML = `<div class="loading-spinner"></div> ${this.t('export_downloading')}`;
             }
             
-            const taskData = await taskResponse.json();
-            let filename;
+            const formData = new FormData();
+            formData.append('task_id', this.currentTaskId);
+            formData.append('content_type', contentType);
+            formData.append('export_format', exportFormat);
+            formData.append('include_timestamps', includeTimestamps ? 'true' : 'false');
+            formData.append('include_header', includeHeader ? 'true' : 'false');
             
-            // 根据文件类型获取对应的文件名
-            switch(fileType) {
-                case 'script':
-                    if (taskData.script_path) {
-                        filename = taskData.script_path.split('/').pop(); // 获取文件名部分
-                    } else {
-                        filename = `transcript_${taskData.safe_title || 'untitled'}_${taskData.short_id || 'unknown'}.md`;
-                    }
-                    break;
-                case 'summary':
-                    if (taskData.summary_path) {
-                        filename = taskData.summary_path.split('/').pop();
-                    } else {
-                        filename = `summary_${taskData.safe_title || 'untitled'}_${taskData.short_id || 'unknown'}.md`;
-                    }
-                    break;
-                case 'translation':
-                    if (taskData.translation_path) {
-                        filename = taskData.translation_path.split('/').pop();
-                    } else if (taskData.translation_filename) {
-                        filename = taskData.translation_filename;
-                    } else {
-                        filename = `translation_${taskData.safe_title || 'untitled'}_${taskData.short_id || 'unknown'}.md`;
-                    }
-                    break;
-                default:
-                    throw new Error('未知的文件类型');
+            const response = await fetch(`${this.apiBase}/export`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (!response.ok) {
+                let detail = '';
+                try {
+                    const errorJson = await response.json();
+                    detail = errorJson.detail || '';
+                } catch (_) {
+                    detail = response.statusText;
+                }
+                throw new Error(detail || 'EXPORT_FAILED');
             }
             
-            // 使用简单直接的下载方式
-            const encodedFilename = encodeURIComponent(filename);
-            const link = document.createElement('a');
-            link.href = `${this.apiBase}/download/${encodedFilename}`;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            const blob = await response.blob();
+            const disposition = response.headers.get('Content-Disposition');
+            let filename = this.extractFilename(disposition);
+            if (!filename) {
+                const extension = this.mapExtension(exportFormat);
+                filename = `export_${Date.now()}.${extension}`;
+            }
+            this.triggerDownload(blob, filename);
+            this.closeExportPanel();
             
         } catch (error) {
-            console.error('下载文件失败:', error);
-            this.showError(this.t('error_download_failed') + error.message);
+            console.error('导出失败:', error);
+            this.showError(this.t('export_error') + (error.message || ''));
+        } finally {
+            if (this.confirmExportBtn) {
+                this.confirmExportBtn.disabled = false;
+                this.confirmExportBtn.innerHTML = `<i class="fas fa-download"></i> ${this.t('export_download')}`;
+            }
         }
+    }
+    
+    mapExtension(format) {
+        const map = {
+            markdown: 'md'
+        };
+        return map[format] || format || 'txt';
+    }
+
+    extractFilename(disposition) {
+        if (!disposition) return null;
+        let match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+        if (match) {
+            try {
+                return decodeURIComponent(match[1].replace(/\"/g, ''));
+            } catch (_) {
+                return match[1];
+            }
+        }
+        match = disposition.match(/filename=\"?([^\";]+)\"?/i);
+        return match ? match[1] : null;
+    }
+    
+    triggerDownload(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     }
     
     setLoading(loading) {

@@ -9,14 +9,17 @@ import logging
 from pathlib import Path
 from typing import Optional
 import aiofiles
+from urllib.parse import quote
 import uuid
 import json
 import re
+import unicodedata
 
 from video_processor import VideoProcessor
 from transcriber import Transcriber
 from summarizer import Summarizer
 from translator import Translator
+from exporter import Exporter
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +34,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 # 获取项目根目录
@@ -48,6 +52,7 @@ video_processor = VideoProcessor()
 transcriber = Transcriber()
 summarizer = Summarizer()
 translator = Translator()
+exporter = Exporter(PROJECT_ROOT)
 
 # 存储任务状态 - 使用文件持久化
 import json
@@ -105,16 +110,94 @@ active_tasks = {}
 # 存储SSE连接，用于实时推送状态更新
 sse_connections = {}
 
+def _load_text_from_file(path: Path) -> Optional[str]:
+    """读取UTF-8文本文件，若失败返回None。"""
+    try:
+        if path and path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+    except Exception as exc:
+        logger.error(f"读取文件失败 {path}: {exc}")
+    return None
+
+def _build_download_headers(filename: str) -> dict:
+    """构建支持非ASCII文件名的下载头。"""
+    encoded = quote(filename)
+    header_value = f"attachment; filename*=UTF-8''{encoded}"
+    return {"Content-Disposition": header_value}
+
+TIMESTAMP_PATTERN = re.compile(
+    r"^\s*\**\[\d{2}:\d{2}(?::\d{2})?\s*-\s*\d{2}:\d{2}(?::\d{2})?\]\**\s*$"
+)
+TIMESTAMP_INLINE_PATTERN = re.compile(
+    r"\**\[\d{2}:\d{2}(?::\d{2})?\s*-\s*\d{2}:\d{2}(?::\d{2})?\]\**"
+)
+
+def _remove_timestamp_markers(text: str) -> str:
+    lines = text.splitlines()
+    filtered = []
+    for line in lines:
+        stripped = line.strip()
+        if TIMESTAMP_PATTERN.match(stripped):
+            continue
+        cleaned = TIMESTAMP_INLINE_PATTERN.sub("", line)
+        cleaned = re.sub(r"\s{2,}", " ", cleaned)
+        filtered.append(cleaned.rstrip())
+    return "\n".join(filtered)
+
+def _compact_blank_lines(text: str) -> str:
+    lines = text.splitlines()
+    result = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped:
+            result.append(stripped)
+    return "\n".join(result).strip()
+
+def _remove_transcript_metadata(text: str) -> str:
+    patterns = [
+        r"#\s*Video Transcription\s*",
+        r"\*\*Detected Language:\*\*.*",
+        r"\*\*Language Probability:\*\*.*",
+        r"##\s*Transcription Content\s*"
+    ]
+    cleaned = text
+    for pattern in patterns:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+def _prepare_export_text(
+    text: Optional[str],
+    *,
+    keep_timestamps: bool,
+    compact_blank: bool,
+    strip_metadata: bool = False
+) -> str:
+    processed = text or ""
+    if strip_metadata:
+        processed = _remove_transcript_metadata(processed)
+    if not keep_timestamps:
+        processed = _remove_timestamp_markers(processed)
+    if compact_blank:
+        processed = _compact_blank_lines(processed)
+    return processed
+
 def _sanitize_title_for_filename(title: str) -> str:
-    """将视频标题清洗为安全的文件名片段。"""
+    """将视频标题清洗为安全的文件名片段，尽可能保留原始字符。"""
     if not title:
         return "untitled"
-    # 仅保留字母数字、下划线、连字符与空格
-    safe = re.sub(r"[^\w\-\s]", "", title)
-    # 压缩空白并转为下划线
-    safe = re.sub(r"\s+", "_", safe).strip("._-")
-    # 最长限制，避免过长文件名问题
-    return safe[:80] or "untitled"
+
+    def _allowed_char(ch: str) -> bool:
+        if ch in " ._-()[]{}":
+            return True
+        category = unicodedata.category(ch)
+        return category[0] in ("L", "N")
+
+    cleaned = "".join(ch if _allowed_char(ch) else "_" for ch in title)
+    cleaned = re.sub(r"_+", "_", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = cleaned.strip(" ._-")
+    return cleaned[:80] or "untitled"
 
 @app.get("/")
 async def read_root():
@@ -438,6 +521,112 @@ async def task_stream(task_id: str):
             "Access-Control-Allow-Headers": "Cache-Control"
         }
     )
+
+@app.post("/api/export")
+async def export_content(
+    task_id: str = Form(...),
+    content_type: str = Form(...),
+    export_format: str = Form(...),
+    include_timestamps: bool = Form(False),
+    include_header: bool = Form(False),
+):
+    """
+    导出指定任务内容，支持多种格式与时间戳选项。
+    """
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    task_data = tasks[task_id]
+    if task_data.get("status") != "completed":
+        raise HTTPException(status_code=400, detail="任务尚未完成")
+
+    content_type = content_type.lower()
+    export_format = export_format.lower()
+
+    allowed_types = {"transcript", "translation", "summary"}
+    if content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="不支持的内容类型")
+
+    allowed_formats = {
+        "markdown": ("md", "text/markdown"),
+        "txt": ("txt", "text/plain"),
+        "docx": ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        "pdf": ("pdf", "application/pdf")
+    }
+    if export_format not in allowed_formats:
+        raise HTTPException(status_code=400, detail="不支持的导出格式")
+
+    if include_timestamps and content_type != "transcript":
+        raise HTTPException(status_code=400, detail="仅转录文本可选择时间戳")
+
+    content = None
+    title_source = task_data.get("video_title") or task_data.get("safe_title") or "export"
+    base_name = _sanitize_title_for_filename(title_source)
+    short_id = task_data.get("short_id") or task_id.replace("-", "")[:6]
+
+    if content_type == "transcript":
+        if include_timestamps:
+            raw_filename = task_data.get("raw_script_file")
+            if raw_filename:
+                raw_path = TEMP_DIR / raw_filename
+                content = _load_text_from_file(raw_path)
+        if not content:
+            script_path = task_data.get("script_path")
+            if script_path:
+                content = _load_text_from_file(Path(script_path))
+            else:
+                content = task_data.get("script")
+        filename_prefix = "transcript"
+    elif content_type == "translation":
+        translation_path = task_data.get("translation_path")
+        if translation_path:
+            content = _load_text_from_file(Path(translation_path))
+        else:
+            content = task_data.get("translation")
+        if not content:
+            raise HTTPException(status_code=400, detail="该任务没有可用的翻译结果")
+        filename_prefix = "translation"
+    else:
+        summary_path = task_data.get("summary_path")
+        if summary_path:
+            content = _load_text_from_file(Path(summary_path))
+        else:
+            content = task_data.get("summary")
+        filename_prefix = "summary"
+        if not content:
+            raise HTTPException(status_code=400, detail="该任务没有可用的摘要结果")
+
+    if content_type == "transcript" and not content:
+        raise HTTPException(status_code=400, detail="未找到可导出的转录内容")
+
+    keep_timestamps = include_timestamps if content_type == "transcript" else True
+    compact_blank = content_type == "transcript"
+    strip_metadata = content_type == "transcript" and not include_header
+    content = _prepare_export_text(
+        content,
+        keep_timestamps=keep_timestamps,
+        compact_blank=compact_blank,
+        strip_metadata=strip_metadata
+    )
+
+    ext, media_type = allowed_formats[export_format]
+    if content_type == "transcript":
+        final_name = base_name
+    else:
+        final_name = f"{base_name}_{content_type}"
+    filename = f"{final_name}.{ext}"
+
+    if export_format == "markdown":
+        buffer = exporter.export_markdown(content)
+    elif export_format == "txt":
+        buffer = exporter.export_text(content)
+    elif export_format == "docx":
+        buffer = exporter.export_docx(content)
+    else:
+        buffer = exporter.export_pdf(content)
+
+    headers = _build_download_headers(filename)
+    return StreamingResponse(buffer, media_type=media_type, headers=headers)
 
 @app.get("/api/download/{filename}")
 async def download_file(filename: str):

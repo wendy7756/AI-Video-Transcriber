@@ -231,9 +231,78 @@
             margin: 0;
         }
 
-        .download-buttons {
+        .export-controls {
+            position: relative;
             display: flex;
+            align-items: center;
+        }
+
+        .export-panel {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            width: 320px;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            padding: 20px;
+            display: none;
+            z-index: 20;
+        }
+
+        .export-panel.active {
+            display: block;
+        }
+
+        .export-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .export-panel-header button {
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            color: var(--text-muted);
+        }
+
+        .export-field {
+            margin-bottom: 16px;
+        }
+
+        .export-format-options {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .export-format-options label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .export-panel-footer {
+            display: flex;
+            justify-content: flex-end;
             gap: 10px;
+            margin-top: 10px;
+        }
+
+        .export-hint {
+            display: block;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 6px;
         }
 
         .content-tabs {
@@ -321,6 +390,14 @@
             color: #155724;
         }
 
+        .checkbox-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
         .loading-spinner {
             display: inline-block;
             width: 20px;
@@ -392,8 +469,16 @@
                 align-items: stretch;
             }
             
-            .download-buttons {
+            .export-controls {
                 justify-content: center;
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .export-panel {
+                position: static;
+                width: 100%;
+                margin-top: 10px;
             }
             
             .content-tabs {
@@ -488,16 +573,76 @@
                 <div class="video-title-container">
                     <!-- 移除重复的标题显示，因为内容中已经包含标题 -->
                 </div>
-                <div class="download-buttons">
-                    <button class="btn btn-success" id="downloadScript">
-                        <span data-i18n="download_transcript">Download Transcript</span>
+                <div class="export-controls">
+                    <button class="btn btn-success" id="exportBtn">
+                        <i class="fas fa-download"></i>
+                        <span data-i18n="export_primary">Export</span>
                     </button>
-                    <button class="btn btn-info" id="downloadTranslation" style="display: none;">
-                        <span data-i18n="download_translation">Download Translation</span>
-                    </button>
-                    <button class="btn btn-success" id="downloadSummary">
-                        <span data-i18n="download_summary">Download Summary</span>
-                    </button>
+                    <div class="export-panel" id="exportPanel">
+                        <div class="export-panel-header">
+                            <strong data-i18n="export_title">Export Options</strong>
+                            <button type="button" id="closeExportPanel" aria-label="Close">&times;</button>
+                        </div>
+                        <div class="export-field">
+                            <label for="exportContentType" data-i18n="export_content_type">Content</label>
+                            <select id="exportContentType" class="form-control">
+                                <option value="transcript" data-i18n="transcript_text">Transcript Text</option>
+                                <option value="summary" data-i18n="intelligent_summary">AI Summary</option>
+                                <option value="translation" data-i18n="translation">Translation</option>
+                            </select>
+                            <span class="export-hint" id="translationHint" style="display: none;" data-i18n="export_translation_unavailable">
+                                Translation result unavailable for this task.
+                            </span>
+                        </div>
+                        <div class="export-field">
+                            <label data-i18n="export_format_label">Format</label>
+                            <div class="export-format-options">
+                                <label>
+                                    <input type="radio" name="exportFormat" value="markdown" checked>
+                                    <span data-i18n="export_format_markdown">Markdown</span>
+                                </label>
+                                <label>
+                                    <input type="radio" name="exportFormat" value="txt">
+                                    <span data-i18n="export_format_txt">Text</span>
+                                </label>
+                                <label>
+                                    <input type="radio" name="exportFormat" value="docx">
+                                    <span data-i18n="export_format_docx">DOCX</span>
+                                </label>
+                                <label>
+                                    <input type="radio" name="exportFormat" value="pdf">
+                                    <span data-i18n="export_format_pdf">PDF</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="export-field">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="exportIncludeTimestamps">
+                                <span data-i18n="export_include_timestamps">Include timestamps</span>
+                            </label>
+                            <span class="export-hint" id="timestampHint" data-i18n="export_timestamp_hint">
+                                Only applies when exporting transcripts.
+                            </span>
+                        </div>
+                        <div class="export-field">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="exportIncludeHeader">
+                                <span data-i18n="export_include_header">Include header</span>
+                            </label>
+                            <span class="export-hint" id="headerHint" data-i18n="export_header_hint">
+                                Adds detected language / probability section.
+                            </span>
+                        </div>
+                        <div class="export-panel-footer">
+                            <button type="button" class="btn btn-secondary" id="cancelExportBtn">
+                                <span data-i18n="export_cancel">Cancel</span>
+                            </button>
+                            <button type="button" class="btn btn-success" id="confirmExportBtn">
+                                <i class="fas fa-download"></i>
+                                <span data-i18n="export_download">Download</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
             

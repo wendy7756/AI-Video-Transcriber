@@ -95,6 +95,7 @@ class VideoTranscriber {
         // 表单元素
         this.form = document.getElementById('videoForm');
         this.videoUrlInput = document.getElementById('videoUrl');
+        this.videoFileInput = document.getElementById('videoFile');
         this.summaryLanguageSelect = document.getElementById('summaryLanguage');
         this.submitBtn = document.getElementById('submitBtn');
         
@@ -139,6 +140,19 @@ class VideoTranscriber {
             e.preventDefault();
             this.startTranscription();
         });
+
+        // 文件选择时清除URL（避免同时提交两者）
+        if (this.videoFileInput) {
+            this.videoFileInput.addEventListener('change', () => {
+                if (this.videoFileInput.files && this.videoFileInput.files.length > 0) {
+                    // 如果选中文件，则清空URL输入并取消required验证
+                    this.videoUrlInput.value = '';
+                    this.videoUrlInput.removeAttribute('required');
+                } else {
+                    this.videoUrlInput.setAttribute('required', 'required');
+                }
+            });
+        }
         
         // 标签页切换
         this.tabButtons.forEach(button => {
@@ -224,9 +238,10 @@ class VideoTranscriber {
         }
         
         const videoUrl = this.videoUrlInput.value.trim();
+        const file = this.videoFileInput && this.videoFileInput.files && this.videoFileInput.files[0] ? this.videoFileInput.files[0] : null;
         const summaryLanguage = this.summaryLanguageSelect.value;
         
-        if (!videoUrl) {
+        if (!videoUrl && !file) {
             this.showError(this.t('error_invalid_url'));
             return;
         }
@@ -240,10 +255,18 @@ class VideoTranscriber {
             
             // 发送转录请求
             const formData = new FormData();
-            formData.append('url', videoUrl);
             formData.append('summary_language', summaryLanguage);
-            
-            const response = await fetch(`${this.apiBase}/process-video`, {
+
+            let endpoint = `${this.apiBase}/process-video`;
+            if (file) {
+                // 优先走文件上传接口
+                formData.append('file', file);
+                endpoint = `${this.apiBase}/upload`;
+            } else {
+                formData.append('url', videoUrl);
+            }
+
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 body: formData
             });

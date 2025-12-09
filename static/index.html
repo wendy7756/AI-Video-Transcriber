@@ -424,7 +424,7 @@
 
         <!-- 输入表单 -->
         <div class="form-card">
-            <form id="videoForm">
+            <form id="videoForm" enctype="multipart/form-data">
                 <div class="form-group">
                     <label for="videoUrl">
                         <i class="fas fa-link"></i> <span data-i18n="video_url">Video URL</span>
@@ -433,6 +433,13 @@
                            data-i18n-placeholder="video_url_placeholder"
                            placeholder="Enter YouTube, Tiktok, Bilibili or other platform video URLs..."
                            required>
+                </div>
+                <div class="form-group">
+                    <label for="videoFile">
+                        <i class="fas fa-upload"></i> Upload File (optional)
+                    </label>
+                    <input type="file" id="videoFile" class="form-control" accept="video/*,audio/*">
+                    <small style="color:var(--text-muted);">You can either paste a video URL above or upload a local video/audio file.</small>
                 </div>
                 
                 <div class="form-row">

@@ -180,6 +180,8 @@ AI-Video-Transcriber/
 | `HOST` | 服务器地址 | `0.0.0.0` | 否 |
 | `PORT` | 服务器端口 | `8000` | 否 |
 | `WHISPER_MODEL_SIZE` | Whisper模型大小 | `base` | 否 |
+| `FAST_MODEL` | 用于格式化，优化的快速模型 | `gpt-3.5-turbo` | 否 |
+| `SMART_MODEL` | 用于生成摘要和翻译的高质量模型 | `gpt-4o` | 否 |
 
 ### Whisper模型大小选项
 
@@ -227,6 +229,7 @@ A: Docker提供了最简单的部署方式：
 git clone https://github.com/wendy7756/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 cp .env.example .env
+# cp .env.ollama .env (optional: for Ollama integration)
 # 编辑.env文件设置你的OPENAI_API_KEY
 
 # 使用Docker Compose启动（推荐）

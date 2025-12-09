@@ -165,11 +165,204 @@ async def process_video(
         logger.error(f"处理视频时出错: {str(e)}")
         raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
 
+
+@app.post("/api/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    summary_language: str = Form(default="zh")
+):
+    """
+    接收上传的音视频文件并为其创建处理任务
+    """
+    try:
+        # 基本类型检查
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="无效的文件名")
+
+        allowed = ['.mp4', '.m4a', '.mp3', '.wav', '.webm', '.mkv', '.flac']
+        ext = Path(file.filename).suffix.lower()
+        if ext not in allowed:
+            raise HTTPException(status_code=400, detail="仅支持音视频文件上传")
+
+        # 保存到TEMP_DIR
+        unique_name = f"upload_{uuid.uuid4().hex[:8]}{ext}"
+        save_path = TEMP_DIR / unique_name
+        async with aiofiles.open(save_path, 'wb') as out_file:
+            content = await file.read()
+            await out_file.write(content)
+
+        # 创建任务并使用本地文件路径作为“url”占位符
+        task_id = str(uuid.uuid4())
+        tasks[task_id] = {
+            "status": "processing",
+            "progress": 0,
+            "message": "开始处理上传文件...",
+            "script": None,
+            "summary": None,
+            "error": None,
+            "url": f"file://{str(save_path)}",
+            "uploaded_file": str(save_path)
+        }
+        save_tasks(tasks)
+
+        # 创建并跟踪异步任务：复用处理流程，但传入本地文件路径并略过下载步骤
+        task = asyncio.create_task(process_uploaded_file_task(task_id, str(save_path), summary_language))
+        active_tasks[task_id] = task
+
+        return {"task_id": task_id, "message": "上传成功，任务已创建"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"上传处理失败: {e}")
+        raise HTTPException(status_code=500, detail=f"上传失败: {str(e)}")
+
+
+async def process_uploaded_file_task(task_id: str, file_path: str, summary_language: str):
+    """
+    处理已上传的本地音视频文件：提取音频（若需要）、转录、生成摘要和翻译
+    """
+    try:
+        tasks[task_id].update({"progress": 10, "message": "准备处理上传文件..."})
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+
+        # 预初始化变量，避免未绑定警告
+        translation_with_title = None
+        translation_path = None
+        translation_filename = None
+
+        # 如果上传的就是音频文件（m4a/mp3/wav/flac），直接用作转录源
+        p = Path(file_path)
+        audio_path = file_path
+        video_title = p.stem
+
+        # 短ID和安全标题提前生成，确保后续分支都可用
+        short_id = task_id.replace('-', '')[:6]
+        safe_title = _sanitize_title_for_filename(video_title)
+
+        if p.suffix.lower() in ['.mp4', '.mkv', '.webm']:
+            # 要从视频中提取音频，使用ffmpeg生成一个m4a文件
+            short_id = task_id.replace('-', '')[:6]
+            audio_out = TEMP_DIR / f"audio_{short_id}.m4a"
+            import subprocess, shlex
+            cmd = f"ffmpeg -y -i {shlex.quote(file_path)} -vn -ac 1 -ar 16000 -c:a aac {shlex.quote(str(audio_out))}"
+            subprocess.check_call(cmd, shell=True)
+            audio_path = str(audio_out)
+
+        # 更新状态：转录
+        tasks[task_id].update({"progress": 40, "message": "正在转录音频..."})
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+
+        raw_script = await transcriber.transcribe(audio_path)
+
+        # 保存原始转录
+        try:
+            short_id = task_id.replace('-', '')[:6]
+            safe_title = _sanitize_title_for_filename(video_title)
+            raw_md_filename = f"raw_{safe_title}_{short_id}.md"
+            raw_md_path = TEMP_DIR / raw_md_filename
+            with open(raw_md_path, 'w', encoding='utf-8') as f:
+                content_raw = (raw_script or '') + f"\n\nsource: file://{file_path}\n"
+                f.write(content_raw)
+            tasks[task_id].update({"raw_script_file": raw_md_filename})
+            save_tasks(tasks)
+            await broadcast_task_update(task_id, tasks[task_id])
+        except Exception as e:
+            logger.error(f"保存原始转录失败: {e}")
+
+        # 优化并生成摘要/翻译  —— 复用已有流程
+        tasks[task_id].update({"progress": 55, "message": "正在优化转录文本..."})
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+
+        script = await summarizer.optimize_transcript(raw_script)
+        script_with_title = f"# {video_title}\n\n{script}\n\nsource: file://{file_path}\n"
+
+        detected_language = transcriber.get_detected_language(raw_script)
+
+        translation_content = None
+        if detected_language and translator.should_translate(detected_language, summary_language):
+            tasks[task_id].update({"progress": 70, "message": "正在生成翻译..."})
+            save_tasks(tasks)
+            await broadcast_task_update(task_id, tasks[task_id])
+            translation_content = await translator.translate_text(script, summary_language, detected_language)
+            translation_with_title = f"# {video_title}\n\n{translation_content}\n\nsource: file://{file_path}\n"
+            translation_filename = f"translation_{_sanitize_title_for_filename(video_title)}_{short_id}.md"
+            translation_path = TEMP_DIR / translation_filename
+            async with aiofiles.open(translation_path, 'w', encoding='utf-8') as f:
+                await f.write(translation_with_title)
+
+        # 生成摘要
+        tasks[task_id].update({"progress": 80, "message": "正在生成摘要..."})
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+
+        summary = await summarizer.summarize(script, summary_language, video_title)
+        summary_with_source = summary + f"\n\nsource: file://{file_path}\n"
+
+        # 保存文件
+        script_filename = f"transcript_{safe_title}_{short_id}.md"
+        script_path = TEMP_DIR / script_filename
+        async with aiofiles.open(script_path, 'w', encoding='utf-8') as f:
+            await f.write(script_with_title)
+
+        summary_filename = f"summary_{safe_title}_{short_id}.md"
+        summary_path = TEMP_DIR / summary_filename
+        async with aiofiles.open(summary_path, 'w', encoding='utf-8') as f:
+            await f.write(summary_with_source)
+
+        # 更新完成状态
+        task_result = {
+            "status": "completed",
+            "progress": 100,
+            "message": "处理完成！",
+            "video_title": video_title,
+            "script": script_with_title,
+            "summary": summary_with_source,
+            "script_path": str(script_path),
+            "summary_path": str(summary_path),
+            "short_id": short_id,
+            "safe_title": safe_title,
+            "detected_language": detected_language,
+            "summary_language": summary_language
+        }
+        if translation_content and translation_path:
+            task_result.update({
+                "translation": translation_with_title,
+                "translation_path": str(translation_path),
+                "translation_filename": translation_filename
+            })
+
+        tasks[task_id].update(task_result)
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+
+        # 清理活跃任务
+        if task_id in active_tasks:
+            del active_tasks[task_id]
+
+    except Exception as e:
+        logger.error(f"上传文件任务 {task_id} 失败: {e}")
+        tasks[task_id].update({"status": "error", "error": str(e), "message": f"处理失败: {str(e)}"})
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+        if task_id in active_tasks:
+            del active_tasks[task_id]
+
 async def process_video_task(task_id: str, url: str, summary_language: str):
     """
     异步处理视频任务
     """
     try:
+        # 预初始化一些变量以避免未绑定警告
+        translation_with_title = None
+        translation_path = None
+        translation_filename = None
+        short_id = task_id.replace('-', '')[:6]
+        safe_title = None
+
         # 立即更新状态：开始下载视频
         tasks[task_id].update({
             "status": "processing",

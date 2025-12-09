@@ -13,6 +13,8 @@ class Summarizer:
         # 从环境变量获取OpenAI API配置
         api_key = os.getenv("OPENAI_API_KEY")
         base_url = os.getenv("OPENAI_BASE_URL")
+        fast_model = os.getenv("FAST_MODEL")
+        smart_model = os.getenv("SMART_MODEL")
         
         if not api_key:
             logger.warning("未设置OPENAI_API_KEY环境变量，将无法使用摘要功能")
@@ -26,7 +28,19 @@ class Summarizer:
                 logger.info("OpenAI客户端已初始化，使用默认端点")
         else:
             self.client = None
-        
+
+        if not fast_model:
+            logger.warning("未设置“快速LLM模型”。将自动设置为gpt-3.5-turbo")
+            self.fast_model = "gpt-3.5-turbo"
+        else:
+            self.fast_model = fast_model
+
+        if not smart_model:
+            logger.warning("未设置“智能LLM模型”。将自动设置为gpt-4o")
+            self.smart_model = "gpt-4o"
+        else:
+            self.smart_model = smart_model
+
         # 支持的语言映射
         self.language_map = {
             "en": "English",
@@ -163,7 +177,7 @@ class Summarizer:
 请特别注意修复因时间戳分割导致的句子不完整问题，并进行合理的段落划分！"""
 
         response = self.client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=self.fast_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -211,7 +225,7 @@ class Summarizer:
 
             try:
                 response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model=self.fast_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
@@ -299,7 +313,7 @@ class Summarizer:
 
         try:
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model=self.fast_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
@@ -782,7 +796,7 @@ class Summarizer:
 重新分段后的文本："""
 
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=self.smart_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -861,7 +875,7 @@ Core requirements:
 {text}"""
 
         response = self.client.chat.completions.create(
-            model="gpt-4o",
+            model=self.smart_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -1034,7 +1048,7 @@ Requirements:
         
         # 调用OpenAI API
         response = self.client.chat.completions.create(
-            model="gpt-4o",
+            model=self.smart_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -1077,7 +1091,7 @@ Avoid using any subheadings or decorative separators, output content only."""
 
             try:
                 response = self.client.chat.completions.create(
-                    model="gpt-4o",
+                    model=self.smart_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
@@ -1172,7 +1186,7 @@ Requirements:
 - Form a complete content summary"""
 
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=self.smart_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -1204,7 +1218,7 @@ Requirements:
 
         try:
             resp = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=self.smart_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},

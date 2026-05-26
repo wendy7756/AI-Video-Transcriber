@@ -1,7 +1,7 @@
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 python-multipart>=0.0.9
-yt-dlp>=2024.12.13
+yt-dlp>=2026.3.17
 faster-whisper>=1.1.0
 openai>=1.51.0
 pydantic>=2.7.0

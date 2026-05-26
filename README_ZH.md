@@ -189,6 +189,12 @@ AI-Video-Transcriber/
 | `PORT` | 服务器端口 | `8000` | 否 |
 | `WHISPER_MODEL_SIZE` | Whisper模型大小 | `base` | 否 |
 | `UPLOAD_MAX_MB` | 本地上传单文件大小上限（MB） | `200` | 否 |
+| `YT_DLP_COOKIES_FILE` | yt-dlp 使用的 Netscape 格式 `cookies.txt` 路径 | - | 否（绕过 YouTube 机器人校验时需要）|
+| `YT_DLP_COOKIES_BROWSER` | 从本机浏览器读取 cookies（如 `chrome`、`firefox`、`chrome:Default`） | - | 否（`YT_DLP_COOKIES_FILE` 的替代）|
+| `YT_DLP_SOCKET_TIMEOUT` | yt-dlp socket 超时（秒） | `60` | 否 |
+| `YT_DLP_RETRIES` | yt-dlp 重试次数 | `10` | 否 |
+| `YT_DLP_FRAGMENT_RETRIES` | yt-dlp HLS/DASH 分片重试次数 | `10` | 否 |
+| `YT_DLP_REMOTE_COMPONENTS` | yt-dlp EJS JS 挑战求解器的远程组件源（逗号分隔）；解 YouTube `n` 参数需要，依赖本地 JS 运行时（`deno` 或 `node`） | `ejs:github` | 否 |
 
 另提供可选接口 `POST /api/process-upload`，与向 `/api/process-video` 提交 `file`  multipart 字段行为一致。
 
@@ -215,6 +221,54 @@ A: 允许的扩展名包括 `.txt`、`.mp3`、`.mp4`、`.m4a`、`.wav`、`.webm`
 
 ### Q: AI优化功能不可用怎么办？
 A: AI功能需要任意OpenAI兼容服务商的API Key（OpenAI、OpenRouter等）。可直接在页面 **AI Settings** 面板中填写，无需重启服务。也可通过 `OPENAI_API_KEY` 环境变量设置服务端默认值。
+
+### Q: YouTube 返回 "下载视频失败: ERROR: [download] Got error: timed out" 或 "Sign in to confirm you're not a bot" 怎么办？
+A: YouTube 现在会对来自 VPS / 数据中心 IP 的匿名请求触发机器人校验。无论是 UI 中看到的 "Got error: timed out"，还是 yt-dlp 日志里的 "Sign in to confirm you're not a bot"，背后都是同一种风控。需要从已登录的浏览器导出 cookies 给 yt-dlp 使用：
+
+**方案 1 — cookies 文件（推荐 VPS / Docker 部署）：**
+1. 用 **个人浏览器** 打开并登录 YouTube。
+2. 安装 "Get cookies.txt" 类插件（如 "Get cookies.txt LOCALLY"），从 `youtube.com` 导出 Netscape 格式 cookies。
+3. 把 `cookies.txt` 上传到服务器，设置环境变量：
+   ```bash
+   export YT_DLP_COOKIES_FILE=/绝对/路径/cookies.txt
+   ```
+4. 重启服务，所有 yt-dlp 调用（信息探测、字幕下载、音频下载）都会复用这份 cookies。
+
+**方案 2 — 直接读取本机浏览器的 cookies**（仅在服务器上同时安装了已登录浏览器时可用）：
+```bash
+export YT_DLP_COOKIES_BROWSER=chrome           # 或 firefox / edge / brave …
+# 也可以指定 profile / user-data-dir：
+export YT_DLP_COOKIES_BROWSER=chrome:Default
+export YT_DLP_COOKIES_BROWSER=chrome:/home/you/.config/google-chrome
+```
+
+**注意事项：**
+- cookies 会过期或被轮换，长时间闲置后可能需要重新导出。
+- 建议使用低活跃度 / 一次性 YouTube 账号，避免主账号被限流。
+- Docker 部署可以挂载 cookies 文件并透传环境变量：
+  ```bash
+  docker run -v /host/path/cookies.txt:/data/cookies.txt:ro \
+    -e YT_DLP_COOKIES_FILE=/data/cookies.txt \
+    -p 8000:8000 --env-file .env ai-video-transcriber
+  ```
+- B 站 / TikTok 等其他平台也适用同一组环境变量，从对应已登录浏览器导出 cookies 即可。
+- 即使 cookies 正确，链路本身较慢时仍可能超时；可调高 `YT_DLP_SOCKET_TIMEOUT` 与 `YT_DLP_RETRIES`。
+
+### Q: YouTube 报 `ERROR: Requested format is not available` 怎么办？
+A: yt-dlp 无法解出 YouTube URL 里的 `n` 参数。从 2026.x 起，YouTube 在 player.js 里下发了一个基于 JS 的反机器人挑战，需要本地 JS 运行时 + 求解器脚本才能过。未配置时只能拿到 storyboard 等权重低的格式，`bestaudio/best` 会被拒。
+
+内置的 Docker 镜像已预装 **deno**，且默认 `YT_DLP_REMOTE_COMPONENTS=ejs:github`，首次使用时会从 yt-dlp 的 GitHub release 拉取求解器脚本。裸机部署补补丁：
+
+1. 装一个 JS 运行时（deno 最轻量）：
+   ```bash
+   curl -fsSL https://deno.land/install.sh | sh -s -- -y --no-modify-path
+   export PATH=$HOME/.deno/bin:$PATH
+   # （或装 Node.js：`apt install nodejs` / `nvm install --lts`）
+   ```
+2. 别把 `YT_DLP_REMOTE_COMPONENTS` 设为空（默认 `ejs:github` 即可工作）。
+3. 重启服务。
+
+如果不想让 yt-dlp 运行时拉脚本，可以手动预装 `ejs` bundle 后将 `YT_DLP_REMOTE_COMPONENTS=` 设为空，详见 yt-dlp [EJS 文档](https://github.com/yt-dlp/yt-dlp/wiki/EJS)。
 
 ### Q: 出现 500 报错/白屏，是代码问题吗？
 A: 多数情况下是环境配置问题，请按以下清单排查：

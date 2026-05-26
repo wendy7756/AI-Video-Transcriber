@@ -3,35 +3,43 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Video Transcriber</title>
+  <title>auto-sub — Auto subtitles & AI summaries</title>
+  <meta name="description" content="auto-sub: Auto-extract subtitles and AI summaries from any YouTube / TikTok / Bilibili video. Bahasa Indonesia ready, download raw .vtt / .srt.">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
   <style>
     :root {
-      --bg:           #0d0b09;
-      --surface:      #171310;
-      --surface-2:    #1f1b17;
-      --surface-3:    #27221d;
-      --border:       #2e271f;
-      --border-light: #3a3028;
-      --accent:       #c07830;
-      --accent-h:     #d08840;
-      --accent-dim:   #7a4c1e;
-      --accent-text:  #e0a060;
-      --text:         #ddd5cb;
-      --text-muted:   #7d6e62;
-      --text-dim:     #4a3f38;
-      --success:      #6ab87a;
-      --error:        #e07878;
-      --r:            12px;
-      --r-sm:         8px;
+      /* auto-sub palette — cool dark + cyan neon */
+      --bg:           #07090d;
+      --surface:      #0e131b;
+      --surface-2:    #141b25;
+      --surface-3:    #1c2532;
+      --border:       #1f2a3a;
+      --border-light: #2b3a52;
+      --accent:       #22d3ee;   /* cyan-400 */
+      --accent-h:     #67e8f9;   /* cyan-300 */
+      --accent-dim:   #155e75;   /* cyan-800 */
+      --accent-text:  #67e8f9;
+      --accent-rgb:   34, 211, 238;
+      --text:         #e6edf6;
+      --text-muted:   #8b97ab;
+      --text-dim:     #4d586a;
+      --success:      #4ade80;
+      --error:        #f87171;
+      --r:            14px;
+      --r-sm:         10px;
+      --glow-sm:      0 0 0 3px rgba(var(--accent-rgb), .14);
+      --glow-md:      0 0 24px -2px rgba(var(--accent-rgb), .35);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-      background: var(--bg);
+      background:
+        radial-gradient(1100px 600px at 50% -10%, rgba(var(--accent-rgb), .07), transparent 70%),
+        radial-gradient(900px 500px at 80% 110%, rgba(var(--accent-rgb), .04), transparent 70%),
+        var(--bg);
       color: var(--text);
       min-height: 100vh;
       line-height: 1.6;
@@ -52,14 +60,33 @@
       gap: 9px;
       text-decoration: none;
     }
-    .nav-logo img { width: 26px; height: 26px; object-fit: contain; }
+    .nav-logo-mark {
+      width: 28px; height: 28px;
+      border-radius: 9px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(circle at 30% 30%, rgba(var(--accent-rgb), .9), rgba(var(--accent-rgb), .25) 60%, transparent 75%),
+        var(--surface-2);
+      border: 1px solid var(--border-light);
+      color: #001218;
+      font-weight: 800;
+      font-size: 13px;
+      letter-spacing: -.04em;
+      box-shadow: 0 0 14px -4px rgba(var(--accent-rgb), .55);
+    }
     .nav-logo-text {
       font-size: 15px;
       font-weight: 650;
       color: var(--text);
       letter-spacing: -0.01em;
     }
-    .nav-logo-text em { color: var(--accent-text); font-style: normal; }
+    .nav-logo-text em {
+      color: var(--accent-text);
+      font-style: normal;
+      text-shadow: 0 0 12px rgba(var(--accent-rgb), .35);
+    }
 
     .lang-btn {
       background: var(--surface-2);
@@ -85,11 +112,16 @@
     }
 
     .page-title {
-      font-size: clamp(2rem, 5vw, 2.9rem);
+      font-size: clamp(2.1rem, 5.5vw, 3.1rem);
       font-weight: 740;
-      line-height: 1.15;
-      letter-spacing: -0.02em;
-      margin-bottom: 10px;
+      line-height: 1.1;
+      letter-spacing: -0.025em;
+      margin-bottom: 12px;
+    }
+    .page-title em {
+      color: var(--accent-text);
+      font-style: normal;
+      text-shadow: 0 0 28px rgba(var(--accent-rgb), .45);
     }
     .page-sub {
       font-size: 15px;
@@ -101,8 +133,8 @@
     /* ── Error banner ────────────────────────────────────── */
     .error-banner {
       display: none;
-      background: rgba(224,120,120,.1);
-      border: 1px solid rgba(224,120,120,.3);
+      background: rgba(248,113,113,.08);
+      border: 1px solid rgba(248,113,113,.3);
       border-radius: var(--r-sm);
       padding: 11px 14px;
       font-size: 13px;
@@ -144,26 +176,27 @@
     .url-input::placeholder { color: var(--text-dim); }
     .url-input:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(192,120,48,.12);
+      box-shadow: var(--glow-sm), 0 0 18px -8px rgba(var(--accent-rgb), .5);
     }
 
     .btn-go {
-      background: var(--accent);
-      color: #fff;
+      background: linear-gradient(180deg, var(--accent-h), var(--accent));
+      color: #001a20;
       border: none;
       border-radius: 10px;
       padding: 13px 22px;
       font-size: 15px;
-      font-weight: 600;
+      font-weight: 700;
       cursor: pointer;
       display: flex;
       align-items: center;
       gap: 8px;
       white-space: nowrap;
       flex-shrink: 0;
-      transition: background .2s, transform .1s, opacity .2s;
+      box-shadow: 0 8px 24px -10px rgba(var(--accent-rgb), .55), inset 0 0 0 1px rgba(255,255,255,.08);
+      transition: filter .2s, transform .1s, opacity .2s, box-shadow .2s;
     }
-    .btn-go:hover { background: var(--accent-h); }
+    .btn-go:hover { filter: brightness(1.08); box-shadow: 0 10px 32px -8px rgba(var(--accent-rgb), .75), inset 0 0 0 1px rgba(255,255,255,.1); }
     .btn-go:active { transform: scale(.98); }
     .btn-go:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 
@@ -191,7 +224,7 @@
     }
     .upload-zone.dragover {
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(192,120,48,.15);
+      box-shadow: var(--glow-sm), 0 0 22px -6px rgba(var(--accent-rgb), .5);
     }
     .upload-zone .upload-formats {
       font-size: 12px;
@@ -277,7 +310,7 @@
     }
     .inline-lang-select:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(192,120,48,.1);
+      box-shadow: var(--glow-sm);
     }
     .inline-lang-select option { background: var(--surface-2); }
 
@@ -328,7 +361,7 @@
     .s-input::placeholder { color: var(--text-dim); }
     .s-input:focus, .s-select:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(192,120,48,.1);
+      box-shadow: var(--glow-sm);
     }
 
     .s-select {
@@ -419,14 +452,16 @@
       border: 1px solid;
     }
     .mode-badge.subtitle {
-      color: #6ab87a;
-      border-color: rgba(106,184,122,.35);
-      background: rgba(106,184,122,.08);
+      color: #4ade80;
+      border-color: rgba(74,222,128,.4);
+      background: rgba(74,222,128,.08);
+      box-shadow: 0 0 16px -6px rgba(74,222,128,.4);
     }
     .mode-badge.whisper {
       color: var(--accent-text);
-      border-color: rgba(192,120,48,.35);
-      background: rgba(192,120,48,.08);
+      border-color: rgba(var(--accent-rgb),.4);
+      background: rgba(var(--accent-rgb),.08);
+      box-shadow: 0 0 16px -6px rgba(var(--accent-rgb),.4);
     }
     .prog-bar {
       width: 100%;
@@ -441,10 +476,12 @@
       background: linear-gradient(90deg, var(--accent), var(--accent-h));
       width: 0%;
       border-radius: 3px;
+      box-shadow: 0 0 12px rgba(var(--accent-rgb), .55);
       transition: width .4s ease;
     }
     .prog-fill.subtitle-mode {
-      background: linear-gradient(90deg, #5aa86a, #6ab87a);
+      background: linear-gradient(90deg, #22c55e, #4ade80);
+      box-shadow: 0 0 12px rgba(74,222,128,.55);
     }
     .prog-msg { font-size: 12px; color: var(--text-dim); font-style: italic; }
 
@@ -476,6 +513,33 @@
       transition: all .2s;
     }
     .btn-dl:hover { border-color: var(--accent-dim); color: var(--accent-text); }
+
+    .dl-format-group {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .25rem .5rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-2);
+    }
+    .dl-format-label {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+    .dl-format-select {
+      background: var(--surface-1);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: .25rem .5rem;
+      font-family: inherit;
+      font-size: 0.9rem;
+    }
+    .dl-format-select:focus { outline: 2px solid var(--accent-dim); outline-offset: 1px; }
 
     .tab-bar {
       display: flex;
@@ -558,9 +622,9 @@
 
 <!-- Navbar -->
 <nav class="navbar">
-  <a class="nav-logo" href="https://sipsip.ai" target="_blank" rel="noopener noreferrer">
-    <img src="/static/sipsip.png" alt="sipsip logo">
-    <span class="nav-logo-text">sipsip<em>.ai</em></span>
+  <a class="nav-logo" href="/">
+    <span class="nav-logo-mark" aria-hidden="true">CC</span>
+    <span class="nav-logo-text">auto<em>-sub</em></span>
   </a>
   <button id="langToggle" class="lang-btn">
     <span id="langText">English</span>
@@ -570,8 +634,8 @@
 
 <!-- Main -->
 <main class="main">
-  <h1 class="page-title" data-i18n="title">AI Video Transcriber</h1>
-  <p class="page-sub" data-i18n="subtitle">Supports automatic transcription and AI summary for 30+ platforms</p>
+  <h1 class="page-title" data-i18n-html="title">auto<em>-sub</em></h1>
+  <p class="page-sub" data-i18n-html="subtitle">Auto-extract subtitles and AI summaries from 30+ video platforms &mdash; <strong style="color:var(--accent-text);">Bahasa Indonesia ready</strong>.</p>
 
   <!-- Error -->
   <div id="errorBanner" class="error-banner">
@@ -618,6 +682,7 @@
       <label class="inline-lang-label" for="summaryLanguage" data-i18n="summary_language">Summary Language</label>
       <select id="summaryLanguage" class="inline-lang-select">
         <option value="en">English</option>
+        <option value="id">Bahasa Indonesia</option>
         <option value="zh">中文（简体）</option>
         <option value="es">Español</option>
         <option value="fr">Français</option>
@@ -726,6 +791,27 @@
           <i class="fas fa-download"></i>
           <span data-i18n="download_summary">Summary</span>
         </button>
+        <button class="btn-dl" id="downloadSubtitle" style="display:none;">
+          <i class="fas fa-closed-captioning"></i>
+          <span data-i18n="download_subtitle">Subtitle</span>
+        </button>
+        <div class="dl-format-group" id="formatGroup" style="display:none;">
+          <label for="formatSelect" class="dl-format-label">
+            <i class="fas fa-file-export"></i>
+            <span data-i18n="download_format">Format</span>
+          </label>
+          <select id="formatSelect" class="dl-format-select" aria-label="Subtitle format">
+            <option value="srt">.srt</option>
+            <option value="vtt">.vtt</option>
+            <option value="ass">.ass</option>
+            <option value="txt">.txt</option>
+            <option value="md">.md</option>
+          </select>
+          <button class="btn-dl" id="downloadFormat">
+            <i class="fas fa-download"></i>
+            <span data-i18n="download_button">Download</span>
+          </button>
+        </div>
       </div>
 
       <div class="tab-bar">
@@ -754,10 +840,10 @@
   </div><!-- /result-panel -->
 
   <div class="footer">
-    <p data-i18n="footer_text">This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> — distill anything and get daily AI briefs from your favorite creators</p>
+    <p data-i18n-html="footer_text"><strong style="color:var(--accent-text);text-shadow:0 0 12px rgba(var(--accent-rgb),.35);">auto-sub</strong> — auto-extract subtitles &amp; AI summaries, Bahasa Indonesia ready. Built on <a href="https://github.com/wendy7756/AI-Video-Transcriber" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">AI-Video-Transcriber</a>.</p>
   </div>
 </main>
 
-<script src="/static/app.js?v=20260307"></script>
+<script src="/static/app.js?v=20260525b"></script>
 </body>
 </html>

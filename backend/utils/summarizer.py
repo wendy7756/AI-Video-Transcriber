@@ -3,7 +3,7 @@ import openai
 import logging
 from typing import Optional
 
-from llm_sanitize import strip_llm_artifacts
+from .llm_sanitize import strip_llm_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,8 @@ class Summarizer:
             "ru": "Русский",
             "ja": "日本語",
             "ko": "한국어",
-            "ar": "العربية"
+            "ar": "العربية",
+            "id": "Bahasa Indonesia",
         }
     
     async def optimize_transcript(self, raw_transcript: str) -> str:
@@ -1333,7 +1334,8 @@ Rules:
             "it": "Italiano",
             "pt": "Português",
             "ru": "Русский",
-            "ar": "العربية"
+            "ar": "العربية",
+            "id": "Bahasa Indonesia",
         }
         return language_instructions.get(lang_code, "English")
     
@@ -1392,7 +1394,11 @@ Rules:
             "ar": {
                 "language_label": "لغة الملخص",
                 "disclaimer": "هذا الملخص تم إنشاؤه تلقائياً بواسطة الذكاء الاصطناعي، للمرجع فقط"
-            }
+            },
+            "id": {
+                "language_label": "Bahasa Ringkasan",
+                "disclaimer": "Ringkasan ini dibuat otomatis oleh AI dan hanya untuk referensi",
+            },
         }
         return labels.get(lang_code, labels["en"])
     
@@ -1446,7 +1452,27 @@ Rules:
                 "recommendation_1": "配置OpenAI API密钥以获得更好的摘要功能",
                 "recommendation_2": "或者使用其他AI服务进行文本总结",
                 "fallback_disclaimer": "本摘要为自动生成的备用版本"
-            }
+            },
+            "id": {
+                "notice": "Catatan",
+                "api_unavailable": "OpenAI API tidak tersedia, ini adalah ringkasan sederhana",
+                "overview_title": "Ringkasan Transkrip",
+                "content_length": "Panjang Konten",
+                "about": "sekitar",
+                "characters": "karakter",
+                "paragraph_count": "Jumlah Paragraf",
+                "paragraphs": "paragraf",
+                "main_content": "Konten Utama",
+                "content_description": "Transkrip berisi konten suara video lengkap. Karena ringkasan AI tidak dapat dibuat saat ini, kami sarankan:",
+                "suggestions_intro": "Untuk informasi lebih detail, kami sarankan:",
+                "suggestion_1": "Baca transkrip lengkap untuk informasi rinci",
+                "suggestion_2": "Fokus pada paragraf penting yang ditandai dengan timestamp",
+                "suggestion_3": "Ekstrak poin-poin kunci secara manual",
+                "recommendations": "Rekomendasi",
+                "recommendation_1": "Konfigurasikan API key OpenAI untuk fungsi ringkasan yang lebih baik",
+                "recommendation_2": "Atau gunakan layanan AI lain untuk merangkum teks",
+                "fallback_disclaimer": "Ringkasan ini adalah versi cadangan yang dibuat otomatis",
+            },
         }
         return labels.get(lang_code, labels["en"])
     

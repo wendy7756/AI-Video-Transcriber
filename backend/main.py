@@ -13,10 +13,20 @@ import json
 import re
 import openai
 
-from video_processor import VideoProcessor
-from transcriber import Transcriber
-from summarizer import Summarizer
-from translator import Translator
+from utils.downloader import Downloader
+from utils.media import normalize_local_media_to_m4a
+from utils.transcriber import Transcriber
+from utils.summarizer import Summarizer
+from utils.translator import Translator
+from utils.subtitle import (
+    Segment,
+    segments_to_ass,
+    segments_to_markdown,
+    segments_to_srt,
+    segments_to_txt,
+    segments_to_vtt,
+)
+from utils.jobs import JobStore
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -44,35 +54,19 @@ TEMP_DIR = PROJECT_ROOT / "temp"
 TEMP_DIR.mkdir(exist_ok=True)
 
 # 初始化处理器
-video_processor = VideoProcessor()
+downloader = Downloader()
 transcriber = Transcriber()
 summarizer = Summarizer()
 translator = Translator()
 
-# 存储任务状态 - 使用文件持久化
-import threading
-
+# 存储任务状态 - 使用 JobStore 文件持久化
 TASKS_FILE = TEMP_DIR / "tasks.json"
-tasks_lock = threading.Lock()
+tasks = JobStore(TASKS_FILE)
 
-def load_tasks():
-    """加载任务状态"""
-    try:
-        if TASKS_FILE.exists():
-            with open(TASKS_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-    except:
-        pass
-    return {}
 
-def save_tasks(tasks_data):
-    """保存任务状态"""
-    try:
-        with tasks_lock:
-            with open(TASKS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(tasks_data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error(f"保存任务状态失败: {e}")
+def save_tasks(_unused=None) -> None:
+    """Persist the task store. Argument kept for legacy call sites."""
+    tasks.save()
 
 async def broadcast_task_update(task_id: str, task_data: dict):
     """向所有连接的SSE客户端广播任务状态更新"""
@@ -95,8 +89,6 @@ async def broadcast_task_update(task_id: str, task_data: dict):
         if not sse_connections[task_id]:
             del sse_connections[task_id]
 
-# 启动时加载任务状态
-tasks = load_tasks()
 # 存储正在处理的URL，防止重复处理
 processing_urls = set()
 # 存储活跃的任务对象，用于控制和取消
@@ -107,6 +99,18 @@ sse_connections = {}
 # 本地上传：允许的类型与大小上限（MB），可用环境变量 UPLOAD_MAX_MB 调整
 UPLOAD_ALLOWED_EXT = frozenset({".txt", ".mp3", ".mp4", ".m4a", ".wav", ".webm", ".mkv", ".ogg", ".flac"})
 UPLOAD_MAX_MB = int(os.getenv("UPLOAD_MAX_MB", "200"))
+
+# 允许下载的文件后缀：Markdown 产出与字幕文件
+DOWNLOAD_ALLOWED_SUFFIXES = (".md", ".vtt", ".srt", ".ass", ".txt")
+
+# 字幕格式 → (扩展名, MIME) 映射，用于按格式即时导出转录字幕
+SUBTITLE_FORMATS: dict[str, tuple[str, str]] = {
+    "srt": (".srt", "application/x-subrip"),
+    "vtt": (".vtt", "text/vtt"),
+    "ass": (".ass", "text/x-ass"),
+    "txt": (".txt", "text/plain"),
+    "md":  (".md",  "text/markdown"),
+}
 
 
 def _sanitize_title_for_filename(title: str) -> str:
@@ -147,6 +151,7 @@ async def _run_post_extract_pipeline(
     api_key: str = "",
     model_base_url: str = "",
     model_id: str = "",
+    raw_subtitle: Optional[tuple] = None,
 ) -> None:
     """取得 raw_script 后的共用管线：归档、优化、翻译、摘要、广播。"""
     short_id = task_id.replace("-", "")[:6]
@@ -162,6 +167,27 @@ async def _run_post_extract_pipeline(
         await broadcast_task_update(task_id, tasks[task_id])
     except Exception as e:
         logger.error(f"保存原始转录Markdown失败: {e}")
+
+    # 如果从平台取得了原始字幕文件，持久化为可下载资源
+    try:
+        if raw_subtitle and isinstance(raw_subtitle, (tuple, list)) and len(raw_subtitle) == 2:
+            sub_content, sub_ext = raw_subtitle
+            ext = (sub_ext or "vtt").lower()
+            if ext not in {"vtt", "srt"}:
+                ext = "vtt"
+            subtitle_filename = f"subtitle_{safe_title}_{short_id}.{ext}"
+            subtitle_path = TEMP_DIR / subtitle_filename
+            async with aiofiles.open(subtitle_path, "w", encoding="utf-8") as f:
+                await f.write(sub_content or "")
+            tasks[task_id].update({
+                "subtitle_file": subtitle_filename,
+                "subtitle_path": str(subtitle_path),
+                "subtitle_ext": ext,
+            })
+            save_tasks(tasks)
+            await broadcast_task_update(task_id, tasks[task_id])
+    except Exception as e:
+        logger.error(f"保存原始字幕文件失败: {e}")
 
     tasks[task_id].update({
         "progress": 55,
@@ -266,6 +292,7 @@ async def _run_post_extract_pipeline(
         "safe_title": safe_title,
         "detected_language": detected_language,
         "summary_language": summary_language,
+        "has_segments": bool(tasks[task_id].get("segments")),
     }
 
     if translation_content and translation_path:
@@ -495,14 +522,21 @@ async def process_video_task(
         else:
             request_summarizer = summarizer  # 全局实例（使用环境变量）
 
-        subtitle_text, sub_title, sub_lang = await video_processor.fetch_subtitles(url, TEMP_DIR)
+        sub_segments, sub_title, sub_lang, raw_subtitle = await downloader.fetch_subtitles(
+            url, TEMP_DIR, preferred_lang=summary_language,
+        )
 
-        if subtitle_text:
+        if sub_segments:
             # ── 快速路径：有字幕，跳过音频下载和 Whisper ──────────────────
             video_title = sub_title
-            raw_script = subtitle_text
-            # 把语言写入 transcriber，保持下游逻辑一致
+            raw_script = segments_to_markdown(
+                sub_segments, language=sub_lang, language_probability=1.0
+            )
+            tasks[task_id]["segments"] = [seg.to_dict() for seg in sub_segments]
+            # 把段落 + 语言写入 transcriber，保持下游逻辑一致
+            transcriber.last_segments = sub_segments
             transcriber.last_detected_language = sub_lang
+            transcriber.last_language_probability = 1.0
 
             tasks[task_id].update({
                 "progress": 40,
@@ -519,7 +553,7 @@ async def process_video_task(
             save_tasks(tasks)
             await broadcast_task_update(task_id, tasks[task_id])
 
-            audio_path, video_title = await video_processor.download_and_convert(
+            audio_path, video_title = await downloader.download_audio(
                 url, TEMP_DIR, prefetched_title=sub_title or None
             )
 
@@ -537,7 +571,11 @@ async def process_video_task(
             save_tasks(tasks)
             await broadcast_task_update(task_id, tasks[task_id])
 
-            raw_script = await transcriber.transcribe(audio_path)
+            seg_list, det_lang, prob = await transcriber.transcribe_segments(audio_path)
+            tasks[task_id]["segments"] = [s.to_dict() for s in seg_list]
+            raw_script = segments_to_markdown(
+                seg_list, language=det_lang, language_probability=prob
+            )
 
         await _run_post_extract_pipeline(
             task_id=task_id,
@@ -550,6 +588,7 @@ async def process_video_task(
             api_key=api_key,
             model_base_url=model_base_url,
             model_id=model_id,
+            raw_subtitle=raw_subtitle,
         )
 
         # 不要立即删除临时文件！保留给用户下载
@@ -633,7 +672,7 @@ async def process_upload_task(
             save_tasks(tasks)
             await broadcast_task_update(task_id, tasks[task_id])
 
-            audio_path = await video_processor.normalize_local_media_to_m4a(saved_path, TEMP_DIR)
+            audio_path = await normalize_local_media_to_m4a(saved_path, TEMP_DIR)
 
             tasks[task_id].update({
                 "progress": 35,
@@ -649,7 +688,11 @@ async def process_upload_task(
             save_tasks(tasks)
             await broadcast_task_update(task_id, tasks[task_id])
 
-            raw_script = await transcriber.transcribe(audio_path)
+            seg_list, det_lang, prob = await transcriber.transcribe_segments(audio_path)
+            tasks[task_id]["segments"] = [s.to_dict() for s in seg_list]
+            raw_script = segments_to_markdown(
+                seg_list, language=det_lang, language_probability=prob
+            )
 
         await _run_post_extract_pipeline(
             task_id=task_id,
@@ -754,9 +797,14 @@ async def download_file(filename: str):
     直接从temp目录下载文件（简化方案）
     """
     try:
+        lower = filename.lower()
         # 检查文件扩展名安全性
-        if not filename.endswith('.md'):
-            raise HTTPException(status_code=400, detail="仅支持下载.md文件")
+        if not lower.endswith(DOWNLOAD_ALLOWED_SUFFIXES):
+            allowed = ", ".join(DOWNLOAD_ALLOWED_SUFFIXES)
+            raise HTTPException(
+                status_code=400,
+                detail=f"仅支持下载以下后缀的文件: {allowed}",
+            )
         
         # 检查文件名格式（防止路径遍历攻击）
         if '..' in filename or '/' in filename or '\\' in filename:
@@ -765,17 +813,87 @@ async def download_file(filename: str):
         file_path = TEMP_DIR / filename
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="文件不存在")
-            
+
+        if lower.endswith(".md"):
+            media_type = "text/markdown"
+        elif lower.endswith(".vtt"):
+            media_type = "text/vtt"
+        elif lower.endswith(".srt"):
+            media_type = "application/x-subrip"
+        elif lower.endswith(".ass"):
+            media_type = "text/x-ass"
+        elif lower.endswith(".txt"):
+            media_type = "text/plain"
+        else:
+            media_type = "application/octet-stream"
+
         return FileResponse(
             file_path,
             filename=filename,
-            media_type="text/markdown"
+            media_type=media_type,
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"下载文件失败: {e}")
         raise HTTPException(status_code=500, detail=f"下载失败: {str(e)}")
+
+
+@app.get("/api/transcript/{task_id}.{fmt}")
+async def download_transcript_format(task_id: str, fmt: str):
+    """Render the transcript segments of a task to the requested subtitle format.
+
+    Supported formats: ``srt``, ``vtt``, ``ass``, ``txt``, ``md``.
+    """
+    fmt_lower = fmt.lower()
+    if fmt_lower not in SUBTITLE_FORMATS:
+        allowed = ", ".join(SUBTITLE_FORMATS.keys())
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format '{fmt}'. Supported: {allowed}",
+        )
+
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    task = tasks[task_id]
+    raw_segments = task.get("segments") or []
+    if not raw_segments:
+        raise HTTPException(
+            status_code=404,
+            detail="该任务尚无可用的转录段落（可能是纯文本上传，或任务尚未完成）",
+        )
+
+    segments = [Segment.from_dict(s) for s in raw_segments]
+    detected_language = task.get("detected_language") or ""
+
+    if fmt_lower == "srt":
+        body = segments_to_srt(segments)
+    elif fmt_lower == "vtt":
+        body = segments_to_vtt(segments)
+    elif fmt_lower == "ass":
+        body = segments_to_ass(segments)
+    elif fmt_lower == "txt":
+        body = segments_to_txt(segments)
+    else:  # md
+        body = segments_to_markdown(
+            segments,
+            language=detected_language,
+            language_probability=None,
+        )
+
+    safe_title = task.get("safe_title") or "transcript"
+    short_id = task.get("short_id") or task_id.replace("-", "")[:6]
+    ext, media_type = SUBTITLE_FORMATS[fmt_lower]
+    filename = f"transcript_{safe_title}_{short_id}{ext}"
+
+    return StreamingResponse(
+        iter([body]),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 @app.delete("/api/task/{task_id}")

@@ -17,8 +17,9 @@ class VideoTranscriber {
 
     this.i18n = {
       en: {
-        title:                   'AI Video Transcriber',
-        subtitle:                'Supports automatic transcription and AI summary for 30+ platforms',
+        title:                   'auto<em>-sub</em>',
+        title_plain:             'auto-sub',
+        subtitle:                'Auto-extract subtitles and AI summaries from 30+ video platforms — <strong style="color:var(--accent-text);">Bahasa Indonesia ready</strong>.',
         video_url_placeholder:   'Paste YouTube, Tiktok, Bilibili or other platform video URLs...',
         start_transcription:     'Transcribe',
         ai_settings:             'AI Settings',
@@ -38,8 +39,11 @@ class VideoTranscriber {
         download_transcript:     'Transcript',
         download_translation:    'Translation',
         download_summary:        'Summary',
+        download_subtitle:       'Subtitle',
+        download_format:         'Format',
+        download_button:         'Download',
         empty_hint:              'Paste a video URL or drop a file above and let AI do the heavy lifting.',
-        footer_text:             'This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> — distill anything and get daily AI briefs from your favorite creators',
+        footer_text:             '<strong style="color:var(--accent-text);text-shadow:0 0 12px rgba(var(--accent-rgb),.35);">auto-sub</strong> — auto-extract subtitles &amp; AI summaries, Bahasa Indonesia ready. Built on <a href="https://github.com/wendy7756/AI-Video-Transcriber" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">AI-Video-Transcriber</a>.',
         processing:              'Processing…',
         downloading_video:       'Downloading audio…',
         parsing_video:           'Parsing video info…',
@@ -67,8 +71,9 @@ class VideoTranscriber {
         error_upload_size:       (mb) => `File exceeds ${mb} MB limit`,
       },
       zh: {
-        title:                   'AI 视频转录器',
-        subtitle:                '粘贴 YouTube、TikTok 或任意公开视频链接，获取转录文本和 AI 摘要。',
+        title:                   'auto<em>-sub</em>',
+        title_plain:             'auto-sub',
+        subtitle:                '一键提取 30+ 视频平台的字幕与 AI 摘要 — <strong style="color:var(--accent-text);">支持印尼语</strong>。',
         video_url_placeholder:   '请输入视频链接…',
         start_transcription:     '开始转录',
         ai_settings:             'AI 设置',
@@ -88,8 +93,11 @@ class VideoTranscriber {
         download_transcript:     '转录',
         download_translation:    '翻译',
         download_summary:        '摘要',
+        download_subtitle:       '字幕',
+        download_format:         '格式',
+        download_button:         '下载',
         empty_hint:              '在上方粘贴视频链接或拖放文件，让 AI 来处理一切。',
-        footer_text:             '本工具是 <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> 的一部分 — 提取任何内容要点并构建你自己的知识库。',
+        footer_text:             '<strong style="color:var(--accent-text);text-shadow:0 0 12px rgba(var(--accent-rgb),.35);">auto-sub</strong> — 自动提取字幕与 AI 摘要，支持印尼语。基于 <a href="https://github.com/wendy7756/AI-Video-Transcriber" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">AI-Video-Transcriber</a>。',
         processing:              '处理中…',
         downloading_video:       '正在下载音频…',
         parsing_video:           '正在解析视频信息…',
@@ -147,6 +155,10 @@ class VideoTranscriber {
     this.dlScript           = document.getElementById('downloadScript');
     this.dlTranslation      = document.getElementById('downloadTranslation');
     this.dlSummary          = document.getElementById('downloadSummary');
+    this.dlSubtitle         = document.getElementById('downloadSubtitle');
+    this.formatGroup        = document.getElementById('formatGroup');
+    this.formatSelect       = document.getElementById('formatSelect');
+    this.dlFormat           = document.getElementById('downloadFormat');
     this.translationTabBtn  = document.getElementById('translationTabBtn');
     this.tabBtns            = document.querySelectorAll('.tab-btn');
     this.tabPanes           = document.querySelectorAll('.tab-pane');
@@ -204,6 +216,10 @@ class VideoTranscriber {
     this.dlScript.addEventListener('click',      () => this._downloadFile('script'));
     this.dlTranslation.addEventListener('click', () => this._downloadFile('translation'));
     this.dlSummary.addEventListener('click',     () => this._downloadFile('summary'));
+    this.dlSubtitle.addEventListener('click',    () => this._downloadFile('subtitle'));
+    if (this.dlFormat) {
+      this.dlFormat.addEventListener('click', () => this._downloadTranscriptFormat());
+    }
 
     if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
       this.uploadPickBtn.addEventListener('click', (e) => {
@@ -249,15 +265,18 @@ class VideoTranscriber {
     this.currentLang = lang;
     this.langText.textContent = lang === 'en' ? 'English' : '中文';
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-    document.title = this.t('title');
+    document.title = `${this.t('title_plain') || 'auto-sub'} — Auto subtitles & AI summaries`;
 
     document.querySelectorAll('[data-i18n]').forEach(el => {
       const v = this.t(el.dataset.i18n);
-      if (typeof v === 'string') {
-        // footer 等允许含 HTML 的 key 用 innerHTML，其余保持 textContent
-        if (el.dataset.i18n === 'footer_text') el.innerHTML = v;
-        else el.textContent = v;
-      }
+      if (typeof v !== 'string') return;
+      // footer 等允许含 HTML 的 key 用 innerHTML，其余保持 textContent
+      if (el.dataset.i18n === 'footer_text') el.innerHTML = v;
+      else el.textContent = v;
+    });
+    document.querySelectorAll('[data-i18n-html]').forEach(el => {
+      const v = this.t(el.dataset.i18nHtml);
+      if (typeof v === 'string') el.innerHTML = v;
     });
     document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
       const v = this.t(el.dataset.i18nPlaceholder);
@@ -481,7 +500,7 @@ class VideoTranscriber {
 
         if (task.status === 'completed') {
           this._stopSP(); this._stopSSE(); this._setLoading(false); this._hideProgress();
-          this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language);
+          this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language, task.subtitle_file, task.has_segments);
         } else if (task.status === 'error') {
           this._stopSP(); this._stopSSE(); this._setLoading(false); this._hideProgress();
           this._showError(task.error || 'Processing error');
@@ -498,7 +517,7 @@ class VideoTranscriber {
             const task = await r.json();
             if (task?.status === 'completed') {
               this._stopSP(); this._setLoading(false); this._hideProgress();
-              this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language);
+              this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language, task.subtitle_file, task.has_segments);
               return;
             }
           }
@@ -671,7 +690,7 @@ class VideoTranscriber {
     return c;
   }
 
-  _showResults(script, summary, videoTitle, translation, detectedLang, summaryLang) {
+  _showResults(script, summary, videoTitle, translation, detectedLang, summaryLang, subtitleFile, hasSegments) {
     this.scriptContent.innerHTML  = script    ? marked.parse(script)      : '';
     this.summaryContent.innerHTML = summary   ? marked.parse(summary)     : '';
 
@@ -685,6 +704,13 @@ class VideoTranscriber {
     } else {
       this.translationTabBtn.style.display  = 'none';
       this.dlTranslation.style.display      = 'none';
+    }
+
+    if (this.dlSubtitle) {
+      this.dlSubtitle.style.display = subtitleFile ? 'inline-flex' : 'none';
+    }
+    if (this.formatGroup) {
+      this.formatGroup.style.display = hasSegments ? 'inline-flex' : 'none';
     }
 
     this.resultsPanel.classList.add('show');
@@ -712,6 +738,14 @@ class VideoTranscriber {
       if      (type === 'script')      filename = task.script_path      ? task.script_path.split('/').pop()      : `transcript_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
       else if (type === 'summary')     filename = task.summary_path     ? task.summary_path.split('/').pop()     : `summary_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
       else if (type === 'translation') filename = task.translation_path ? task.translation_path.split('/').pop() : `translation_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
+      else if (type === 'subtitle') {
+        filename = task.subtitle_file
+          || (task.subtitle_path ? task.subtitle_path.split('/').pop() : null)
+          || `subtitle_${task.safe_title||'x'}_${task.short_id||'x'}.${task.subtitle_ext||'vtt'}`;
+        if (!task.subtitle_file && !task.subtitle_path) {
+          throw new Error(this.t('error_no_subtitle') || 'No subtitle file available');
+        }
+      }
       else throw new Error('Unknown type');
 
       const a = document.createElement('a');
@@ -723,6 +757,18 @@ class VideoTranscriber {
     } catch (e) {
       this._showError(this.t('error_download_failed') + e.message);
     }
+  }
+
+  async _downloadTranscriptFormat() {
+    if (!this.currentTaskId) { this._showError(this.t('error_no_download')); return; }
+    const fmt = (this.formatSelect && this.formatSelect.value) || 'srt';
+    const url = `${this.apiBase}/transcript/${encodeURIComponent(this.currentTaskId)}.${fmt}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
 
   /* ── UI helpers ───────────────────────────────────────── */

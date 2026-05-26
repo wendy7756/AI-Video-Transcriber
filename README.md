@@ -189,6 +189,12 @@ AI-Video-Transcriber/
 | `PORT` | Server port | `8000` | No |
 | `WHISPER_MODEL_SIZE` | Whisper model size | `base` | No |
 | `UPLOAD_MAX_MB` | Maximum upload size for local files (MB) | `200` | No |
+| `YT_DLP_COOKIES_FILE` | Path to a Netscape-format `cookies.txt` for yt-dlp | - | No — needed to bypass YouTube bot-check |
+| `YT_DLP_COOKIES_BROWSER` | Read cookies from a local browser profile (e.g. `chrome`, `firefox`, `chrome:Default`) | - | No — alternative to `YT_DLP_COOKIES_FILE` |
+| `YT_DLP_SOCKET_TIMEOUT` | yt-dlp socket timeout in seconds | `60` | No |
+| `YT_DLP_RETRIES` | yt-dlp retries for transient errors | `10` | No |
+| `YT_DLP_FRAGMENT_RETRIES` | yt-dlp retries per HLS/DASH fragment | `10` | No |
+| `YT_DLP_REMOTE_COMPONENTS` | Comma-separated remote-component sources for yt-dlp's EJS JS-challenge solver (needed for YouTube's `n` parameter; requires a JS runtime like `deno` or `node`) | `ejs:github` | No |
 
 An optional dedicated endpoint `POST /api/process-upload` exists with the same behavior as sending `file` to `/api/process-video`.
 
@@ -215,6 +221,54 @@ A: Allowed extensions include `.txt`, `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `
 
 ### Q: What if the AI optimization features are unavailable?
 A: AI features require an API key from any OpenAI-compatible provider (OpenAI, OpenRouter, etc.). You can enter it directly in the **AI Settings** panel in the UI — no server restart needed. Alternatively, set `OPENAI_API_KEY` as an environment variable for a server-side default.
+
+### Q: YouTube returns "下载视频失败: ERROR: [download] Got error: timed out" or "Sign in to confirm you're not a bot"
+A: YouTube increasingly blocks unauthenticated requests from VPS / datacenter IPs. Both the in-app "Got error: timed out" wrapper and yt-dlp's "Sign in to confirm you're not a bot" message ultimately come from the same anti-bot check. Supply YouTube cookies from a logged-in browser:
+
+**Option 1 — cookies file (recommended for VPS/Docker):**
+1. Open YouTube in your **personal browser** (logged in to a YouTube account).
+2. Install a "Get cookies.txt" extension (e.g. "Get cookies.txt LOCALLY" for Chrome/Firefox) and export cookies from `youtube.com` as Netscape format.
+3. Upload `cookies.txt` to the server, then set the env var:
+   ```bash
+   export YT_DLP_COOKIES_FILE=/absolute/path/to/cookies.txt
+   ```
+4. Restart the service. The same file is reused for all yt-dlp calls (info probe, subtitle download, audio download).
+
+**Option 2 — read directly from a browser on the same host** (only useful if a logged-in browser is installed alongside the server):
+```bash
+export YT_DLP_COOKIES_BROWSER=chrome           # or firefox, edge, brave, ...
+# Or with an explicit profile / user-data-dir:
+export YT_DLP_COOKIES_BROWSER=chrome:Default
+export YT_DLP_COOKIES_BROWSER=chrome:/home/you/.config/google-chrome
+```
+
+**Notes & tips:**
+- Re-export cookies if YouTube starts rejecting them again (cookies expire / get rotated, especially after long idle periods).
+- Use a low-traffic / throwaway YouTube account if you're worried about it being rate-limited.
+- For Docker, mount the cookies file read-only and pass through the env var:
+  ```bash
+  docker run -v /host/path/cookies.txt:/data/cookies.txt:ro \
+    -e YT_DLP_COOKIES_FILE=/data/cookies.txt \
+    -p 8000:8000 --env-file .env ai-video-transcriber
+  ```
+- For other platforms (Bilibili, TikTok, etc.) the same env vars apply — export cookies from your logged-in browser on that platform.
+- If you still see download timeouts even with valid cookies, the upstream link may be slow; bump `YT_DLP_SOCKET_TIMEOUT` and `YT_DLP_RETRIES`.
+
+### Q: YouTube returns `ERROR: Requested format is not available`
+A: yt-dlp couldn't decode YouTube's `n` URL parameter (since 2026.x, YouTube enforces a JS-based anti-bot challenge on most videos). Without a JS runtime + solver script, yt-dlp only sees storyboard formats, so format selection like `bestaudio/best` fails.
+
+The bundled Docker image already installs **deno** and the solver is downloaded automatically on first use (via `YT_DLP_REMOTE_COMPONENTS=ejs:github`). For a **bare-metal** install:
+
+1. Install a JS runtime (deno is the lightest):
+   ```bash
+   curl -fsSL https://deno.land/install.sh | sh -s -- -y --no-modify-path
+   export PATH=$HOME/.deno/bin:$PATH
+   # (or install Node.js: `apt install nodejs` / `nvm install --lts`)
+   ```
+2. Make sure `YT_DLP_REMOTE_COMPONENTS` is **not** set to empty (default `ejs:github` already works).
+3. Restart the service.
+
+If you don't want yt-dlp to fetch the solver from GitHub at runtime, you can pre-install the `ejs` bundle yourself and set `YT_DLP_REMOTE_COMPONENTS=` (empty). See yt-dlp's [EJS docs](https://github.com/yt-dlp/yt-dlp/wiki/EJS) for details.
 
 ### Q: I get HTTP 500 errors when starting/using the service. Why?
 A: In most cases this is an environment configuration issue rather than a code bug. Please check:

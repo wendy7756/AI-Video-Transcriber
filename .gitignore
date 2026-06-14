@@ -65,3 +65,12 @@ temp/
 # Model cache
 models/
 .cache/
+
+# Transcript cache (runtime)
+cache/
+
+# Task persistence (runtime)
+tasks.json
+
+# Desktop: machine-local path written at build time
+desktop/src-tauri/project_root.txt

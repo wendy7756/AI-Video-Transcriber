@@ -4,8 +4,10 @@ import logging
 from typing import Optional
 
 from llm_sanitize import strip_llm_artifacts
+from llm_presets import DEFAULT_LLM_MODEL, DEFAULT_OPENAI_BASE_URL
 
 logger = logging.getLogger(__name__)
+
 
 class Summarizer:
     """文本总结器，使用OpenAI API生成多语言摘要"""
@@ -18,25 +20,21 @@ class Summarizer:
         model 指定时会同时作为 fast_model 和 advanced_model 使用。
         """
         effective_key = api_key or os.getenv("OPENAI_API_KEY")
-        effective_url = base_url or os.getenv("OPENAI_BASE_URL")
+        effective_url = base_url or os.getenv("OPENAI_BASE_URL") or DEFAULT_OPENAI_BASE_URL
 
         if not effective_key:
             logger.warning("未设置OPENAI_API_KEY环境变量，将无法使用摘要功能")
 
         if effective_key:
-            kwargs = {"api_key": effective_key}
-            if effective_url:
-                kwargs["base_url"] = effective_url
-                logger.info(f"OpenAI客户端已初始化，base_url={effective_url}")
-            else:
-                logger.info("OpenAI客户端已初始化，使用默认端点")
+            kwargs = {"api_key": effective_key, "base_url": effective_url}
+            logger.info(f"OpenAI客户端已初始化，base_url={effective_url}")
             self.client = openai.OpenAI(**kwargs)
         else:
             self.client = None
 
-        # 允许前端指定模型，覆盖硬编码的 gpt-3.5-turbo / gpt-4o
-        self.fast_model     = model or "gpt-3.5-turbo"
-        self.advanced_model = model or "gpt-4o"
+        resolved_model = model or os.getenv("OPENAI_MODEL") or DEFAULT_LLM_MODEL
+        self.fast_model = os.getenv("OPENAI_FAST_MODEL") or resolved_model
+        self.advanced_model = os.getenv("OPENAI_ADVANCED_MODEL") or resolved_model
         
         # 支持的语言映射
         self.language_map = {

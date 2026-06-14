@@ -1,28 +1,28 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Video Transcriber</title>
+  <title>Video Trans</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
   <style>
     :root {
-      --bg:           #0d0b09;
-      --surface:      #171310;
-      --surface-2:    #1f1b17;
-      --surface-3:    #27221d;
-      --border:       #2e271f;
-      --border-light: #3a3028;
-      --accent:       #c07830;
-      --accent-h:     #d08840;
-      --accent-dim:   #7a4c1e;
-      --accent-text:  #e0a060;
-      --text:         #ddd5cb;
-      --text-muted:   #7d6e62;
-      --text-dim:     #4a3f38;
-      --success:      #6ab87a;
-      --error:        #e07878;
+      --bg:           #0a0e14;
+      --surface:      #111827;
+      --surface-2:    #1a2332;
+      --surface-3:    #243044;
+      --border:       #2a3548;
+      --border-light: #364357;
+      --accent:       #0891b2;
+      --accent-h:     #06b6d4;
+      --accent-dim:   #155e75;
+      --accent-text:  #67e8f9;
+      --text:         #e2e8f0;
+      --text-muted:   #94a3b8;
+      --text-dim:     #64748b;
+      --success:      #34d399;
+      --error:        #f87171;
       --r:            12px;
       --r-sm:         8px;
     }
@@ -52,14 +52,24 @@
       gap: 9px;
       text-decoration: none;
     }
-    .nav-logo img { width: 26px; height: 26px; object-fit: contain; }
+    .nav-logo-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-h));
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+    }
     .nav-logo-text {
       font-size: 15px;
       font-weight: 650;
       color: var(--text);
       letter-spacing: -0.01em;
     }
-    .nav-logo-text em { color: var(--accent-text); font-style: normal; }
+    .nav-logo-text em { color: var(--accent-text); font-style: normal; font-weight: 500; }
 
     .lang-btn {
       background: var(--surface-2);
@@ -144,7 +154,7 @@
     .url-input::placeholder { color: var(--text-dim); }
     .url-input:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(192,120,48,.12);
+      box-shadow: 0 0 0 3px rgba(8,145,178,.18);
     }
 
     .btn-go {
@@ -191,7 +201,7 @@
     }
     .upload-zone.dragover {
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(192,120,48,.15);
+      box-shadow: 0 0 0 3px rgba(8,145,178,.2);
     }
     .upload-zone .upload-formats {
       font-size: 12px;
@@ -277,7 +287,7 @@
     }
     .inline-lang-select:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(192,120,48,.1);
+      box-shadow: 0 0 0 3px rgba(8,145,178,.14);
     }
     .inline-lang-select option { background: var(--surface-2); }
 
@@ -328,7 +338,7 @@
     .s-input::placeholder { color: var(--text-dim); }
     .s-input:focus, .s-select:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(192,120,48,.1);
+      box-shadow: 0 0 0 3px rgba(8,145,178,.14);
     }
 
     .s-select {
@@ -419,14 +429,14 @@
       border: 1px solid;
     }
     .mode-badge.subtitle {
-      color: #6ab87a;
-      border-color: rgba(106,184,122,.35);
-      background: rgba(106,184,122,.08);
+      color: var(--success);
+      border-color: rgba(52,211,153,.35);
+      background: rgba(52,211,153,.08);
     }
     .mode-badge.whisper {
       color: var(--accent-text);
-      border-color: rgba(192,120,48,.35);
-      background: rgba(192,120,48,.08);
+      border-color: rgba(8,145,178,.35);
+      background: rgba(8,145,178,.08);
     }
     .prog-bar {
       width: 100%;
@@ -444,7 +454,7 @@
       transition: width .4s ease;
     }
     .prog-fill.subtitle-mode {
-      background: linear-gradient(90deg, #5aa86a, #6ab87a);
+      background: linear-gradient(90deg, #10b981, var(--success));
     }
     .prog-msg { font-size: 12px; color: var(--text-dim); font-style: italic; }
 
@@ -455,9 +465,9 @@
     .res-top {
       display: flex;
       align-items: center;
-      justify-content: flex-end;
+      justify-content: flex-start;
       padding: 14px 18px 0;
-      gap: 8px;
+      gap: 12px;
       flex-wrap: wrap;
     }
 
@@ -477,11 +487,145 @@
     }
     .btn-dl:hover { border-color: var(--accent-dim); color: var(--accent-text); }
 
+    .btn-dl-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #041018;
+      font-weight: 600;
+    }
+    .btn-dl-primary:hover {
+      background: var(--accent-text);
+      border-color: var(--accent-text);
+      color: #041018;
+    }
+
+    .cache-badge {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent-text);
+      background: rgba(0, 212, 255, 0.12);
+      border: 1px solid rgba(0, 212, 255, 0.35);
+    }
+    .cache-badge.show { display: inline-flex; }
+
+    .res-title {
+      flex: 1;
+      min-width: 0;
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.4;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .res-actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+
+    .video-stage {
+      padding: 12px 18px 8px;
+    }
+
+    .video-stage video,
+    .video-stage audio {
+      display: block;
+      width: 100%;
+      max-height: min(68vh, 720px);
+      border-radius: 10px;
+      background: #000;
+      border: 1px solid var(--border);
+      object-fit: contain;
+    }
+
+    .video-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 220px;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
+    .video-empty i { font-size: 28px; opacity: 0.5; }
+
+    .advanced-panel {
+      margin: 8px 18px 20px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+      overflow: hidden;
+    }
+
+    .advanced-panel > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 12px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .advanced-panel > summary::-webkit-details-marker { display: none; }
+
+    .advanced-panel > summary::before {
+      content: '▸';
+      font-size: 11px;
+      transition: transform .2s;
+    }
+
+    .advanced-panel[open] > summary::before { transform: rotate(90deg); }
+
+    .advanced-panel > summary:hover { color: var(--text); }
+
+    .advanced-body { border-top: 1px solid var(--border); }
+
+    .advanced-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px 16px 0;
+    }
+
+    .scroll-pane {
+      max-height: min(48vh, 420px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      margin-top: 8px;
+    }
+
+    .scroll-pane .tab-pane {
+      padding: 16px 16px 20px;
+    }
+
+    .scroll-pane .md-content {
+      padding-right: 4px;
+    }
+
     .tab-bar {
       display: flex;
       border-bottom: 1px solid var(--border);
-      padding: 0 18px;
-      margin-top: 12px;
+      padding: 0 16px;
+      margin-top: 0;
     }
     .tab-btn {
       background: none;
@@ -500,6 +644,7 @@
 
     .tab-pane { display: none; padding: 20px 20px 24px; }
     .tab-pane.active { display: block; }
+    .scroll-pane .tab-pane { padding: 16px 16px 20px; }
 
     .md-content {
       font-size: 14px;
@@ -558,9 +703,9 @@
 
 <!-- Navbar -->
 <nav class="navbar">
-  <a class="nav-logo" href="https://sipsip.ai" target="_blank" rel="noopener noreferrer">
-    <img src="/static/sipsip.png" alt="sipsip logo">
-    <span class="nav-logo-text">sipsip<em>.ai</em></span>
+  <a class="nav-logo" href="/">
+    <span class="nav-logo-icon"><i class="fas fa-closed-captioning"></i></span>
+    <span class="nav-logo-text">video <em>trans</em></span>
   </a>
   <button id="langToggle" class="lang-btn">
     <span id="langText">English</span>
@@ -570,8 +715,8 @@
 
 <!-- Main -->
 <main class="main">
-  <h1 class="page-title" data-i18n="title">AI Video Transcriber</h1>
-  <p class="page-sub" data-i18n="subtitle">Supports automatic transcription and AI summary for 30+ platforms</p>
+  <h1 class="page-title" data-i18n="title">Video Trans</h1>
+  <p class="page-sub" data-i18n="subtitle">粘贴视频链接或上传文件，完成后直接预览视频；文案与导出在高级选项中。</p>
 
   <!-- Error -->
   <div id="errorBanner" class="error-banner">
@@ -617,8 +762,8 @@
     <div class="inline-lang">
       <label class="inline-lang-label" for="summaryLanguage" data-i18n="summary_language">Summary Language</label>
       <select id="summaryLanguage" class="inline-lang-select">
+        <option value="zh" selected>中文（简体）</option>
         <option value="en">English</option>
-        <option value="zh">中文（简体）</option>
         <option value="es">Español</option>
         <option value="fr">Français</option>
         <option value="de">Deutsch</option>
@@ -642,6 +787,12 @@
     <div class="settings-card">
       <div class="settings-grid">
 
+        <!-- Provider preset -->
+        <div class="span2">
+          <label class="s-label" for="providerPreset" data-i18n="provider_preset">Provider</label>
+          <select id="providerPreset" class="s-select"></select>
+        </div>
+
         <!-- Base URL (full row) -->
         <div class="span2">
           <label class="s-label" data-i18n="model_base_url">Model API Base URL</label>
@@ -649,6 +800,7 @@
             id="modelBaseUrl"
             class="s-input"
             type="url"
+            value="https://openrouter.ai/api/v1"
             placeholder="https://openrouter.ai/api/v1"
             data-i18n-placeholder="model_base_url_placeholder"
             autocomplete="off"
@@ -678,9 +830,7 @@
         <!-- Model selector -->
         <div>
           <label class="s-label" data-i18n="model_select">Model</label>
-          <select id="modelSelect" class="s-select">
-            <option value="" data-i18n="model_default">— use server default —</option>
-          </select>
+          <select id="modelSelect" class="s-select"></select>
         </div>
 
       </div>
@@ -714,50 +864,83 @@
     <!-- Results -->
     <div class="results-panel" id="resultsPanel">
       <div class="res-top">
-        <button class="btn-dl" id="downloadScript">
-          <i class="fas fa-download"></i>
-          <span data-i18n="download_transcript">Transcript</span>
-        </button>
-        <button class="btn-dl" id="downloadTranslation" style="display:none;">
-          <i class="fas fa-download"></i>
-          <span data-i18n="download_translation">Translation</span>
-        </button>
-        <button class="btn-dl" id="downloadSummary">
-          <i class="fas fa-download"></i>
-          <span data-i18n="download_summary">Summary</span>
-        </button>
+        <span class="cache-badge" id="cacheBadge">
+          <i class="fas fa-bolt"></i>
+          <span data-i18n="from_cache">Loaded from local cache</span>
+        </span>
+        <h2 class="res-title" id="resultTitle"></h2>
+        <div class="res-actions">
+          <button class="btn-dl btn-dl-primary" id="exportBundle">
+            <i class="fas fa-file-zipper"></i>
+            <span data-i18n="export_bundle">Export bundle</span>
+          </button>
+          <button class="btn-dl" id="downloadMedia" style="display:none;">
+            <i class="fas fa-download"></i>
+            <span data-i18n="download_media">Video</span>
+          </button>
+        </div>
       </div>
 
-      <div class="tab-bar">
-        <button class="tab-btn active" data-tab="script">
-          <span data-i18n="transcript_text">Transcript</span>
-        </button>
-        <button class="tab-btn" data-tab="summary">
-          <span data-i18n="intelligent_summary">AI Summary</span>
-        </button>
-        <button class="tab-btn" data-tab="translation" id="translationTabBtn" style="display:none;">
-          <span data-i18n="translation">Translation</span>
-        </button>
+      <div class="video-stage" id="videoStage">
+        <video id="resultVideo" controls playsinline preload="metadata" style="display:none;"></video>
+        <div class="video-empty" id="videoEmpty">
+          <i class="fas fa-film"></i>
+          <span data-i18n="no_video_preview">No video preview available</span>
+        </div>
       </div>
 
-      <div id="scriptTab" class="tab-pane active">
-        <div class="md-content" id="scriptContent"></div>
-      </div>
-      <div id="summaryTab" class="tab-pane">
-        <div class="md-content" id="summaryContent"></div>
-      </div>
-      <div id="translationTab" class="tab-pane">
-        <div class="md-content" id="translationContent"></div>
-      </div>
+      <details class="advanced-panel" id="advancedPanel">
+        <summary><span data-i18n="advanced_panel">Advanced · Transcript &amp; export</span></summary>
+        <div class="advanced-body">
+          <div class="advanced-toolbar">
+            <button class="btn-dl" id="downloadScript">
+              <i class="fas fa-file-lines"></i>
+              <span data-i18n="download_transcript">Transcript</span>
+            </button>
+            <button class="btn-dl" id="downloadSummary">
+              <i class="fas fa-download"></i>
+              <span data-i18n="download_summary">Summary</span>
+            </button>
+            <button class="btn-dl" id="downloadTranslation" style="display:none;">
+              <i class="fas fa-download"></i>
+              <span data-i18n="download_translation">Translation</span>
+            </button>
+          </div>
+
+          <div class="tab-bar">
+            <button class="tab-btn active" data-tab="script">
+              <span data-i18n="transcript_text">Transcript</span>
+            </button>
+            <button class="tab-btn" data-tab="summary">
+              <span data-i18n="intelligent_summary">AI Summary</span>
+            </button>
+            <button class="tab-btn" data-tab="translation" id="translationTabBtn" style="display:none;">
+              <span data-i18n="translation">Translation</span>
+            </button>
+          </div>
+
+          <div class="scroll-pane">
+            <div id="scriptTab" class="tab-pane active">
+              <div class="md-content" id="scriptContent"></div>
+            </div>
+            <div id="summaryTab" class="tab-pane">
+              <div class="md-content" id="summaryContent"></div>
+            </div>
+            <div id="translationTab" class="tab-pane">
+              <div class="md-content" id="translationContent"></div>
+            </div>
+          </div>
+        </div>
+      </details>
     </div>
 
   </div><!-- /result-panel -->
 
   <div class="footer">
-    <p data-i18n="footer_text">This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> — distill anything and get daily AI briefs from your favorite creators</p>
+    <p data-i18n="footer_text">Video Trans — AI 视频转录与摘要</p>
   </div>
 </main>
 
-<script src="/static/app.js?v=20260307"></script>
+<script src="/static/app.js?v=20260613e"></script>
 </body>
 </html>

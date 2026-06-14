@@ -7,7 +7,12 @@ class VideoTranscriber {
     this.currentTaskId  = null;
     this.eventSource    = null;
     this.apiBase        = '/api';
-    this.currentLang    = 'en';
+    this.currentLang    = 'zh';
+    this.defaultBaseUrl  = 'https://openrouter.ai/api/v1';
+    this.defaultModelId  = 'google/gemini-2.0-flash-001';
+    this.llmPresets     = null;
+    this.currentProviderId = 'openrouter';
+    this._fetchedModels = [];
 
     /* Smart progress simulation */
     this.sp = {
@@ -17,8 +22,8 @@ class VideoTranscriber {
 
     this.i18n = {
       en: {
-        title:                   'AI Video Transcriber',
-        subtitle:                'Supports automatic transcription and AI summary for 30+ platforms',
+        title:                   'Video Trans',
+        subtitle:                'Paste a video URL or upload a file — preview the video when done; transcript & export under Advanced.',
         video_url_placeholder:   'Paste YouTube, Tiktok, Bilibili or other platform video URLs...',
         start_transcription:     'Transcribe',
         ai_settings:             'AI Settings',
@@ -29,6 +34,9 @@ class VideoTranscriber {
         fetch_models:            'Fetch',
         model_select:            'Model',
         model_default:           '— use server default —',
+        provider_preset:         'Provider',
+        models_recommended:      'Recommended',
+        models_fetched:          'From API',
         summary_language:        'Summary Language',
         processing_progress:     'Processing',
         preparing:               'Preparing…',
@@ -38,17 +46,22 @@ class VideoTranscriber {
         download_transcript:     'Transcript',
         download_translation:    'Translation',
         download_summary:        'Summary',
+        download_media:          'Video',
+        export_bundle:           'Export bundle (video + transcript)',
+        advanced_panel:          'Advanced · Transcript & export',
+        no_video_preview:        'No video preview available',
+        from_cache:              'Loaded from local cache',
         empty_hint:              'Paste a video URL or drop a file above and let AI do the heavy lifting.',
-        footer_text:             'This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> — distill anything and get daily AI briefs from your favorite creators',
+        footer_text:             'Video Trans — AI video transcription & summary',
         processing:              'Processing…',
-        downloading_video:       'Downloading audio…',
+        downloading_video:       'Downloading video…',
         parsing_video:           'Parsing video info…',
         transcribing_audio:      'Transcribing audio…',
         optimizing_transcript:   'Optimizing transcript…',
         generating_summary:      'Generating summary…',
         detecting_subtitles:     'Detecting subtitles…',
         subtitle_found:          'Subtitles found! Processing text…',
-        no_subtitle:             'No subtitles found, downloading audio…',
+        no_subtitle:             'No subtitles found, downloading video…',
         mode_subtitle:           '⚡ Subtitle',
         mode_whisper:            '🎙 Whisper',
         completed:               'Done!',
@@ -67,8 +80,8 @@ class VideoTranscriber {
         error_upload_size:       (mb) => `File exceeds ${mb} MB limit`,
       },
       zh: {
-        title:                   'AI 视频转录器',
-        subtitle:                '粘贴 YouTube、TikTok 或任意公开视频链接，获取转录文本和 AI 摘要。',
+        title:                   'Video Trans',
+        subtitle:                '粘贴视频链接或上传文件，完成后直接预览视频；文案与导出在高级选项中。',
         video_url_placeholder:   '请输入视频链接…',
         start_transcription:     '开始转录',
         ai_settings:             'AI 设置',
@@ -79,26 +92,34 @@ class VideoTranscriber {
         fetch_models:            '获取',
         model_select:            '模型',
         model_default:           '— 使用服务器默认 —',
+        provider_preset:         '模型提供商',
+        models_recommended:      '推荐三方模型',
+        models_fetched:          '接口返回模型',
         summary_language:        '摘要语言',
         processing_progress:     '处理进度',
         preparing:               '准备中…',
         transcript_text:         '转录文本',
         intelligent_summary:     '智能摘要',
         translation:             '翻译',
-        download_transcript:     '转录',
+        download_transcript:     '转写文案',
         download_translation:    '翻译',
         download_summary:        '摘要',
+        download_media:          '视频',
+        export_bundle:           '打包导出（视频+文案）',
+        advanced_panel:          '高级 · 文案与导出',
+        no_video_preview:        '暂无视频预览',
+        from_cache:              '已命中本地缓存',
         empty_hint:              '在上方粘贴视频链接或拖放文件，让 AI 来处理一切。',
-        footer_text:             '本工具是 <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> 的一部分 — 提取任何内容要点并构建你自己的知识库。',
+        footer_text:             'Video Trans — AI 视频转录与摘要',
         processing:              '处理中…',
-        downloading_video:       '正在下载音频…',
+        downloading_video:       '正在下载视频…',
         parsing_video:           '正在解析视频信息…',
         transcribing_audio:      '正在转录音频…',
         optimizing_transcript:   '正在优化转录文本…',
         generating_summary:      '正在生成摘要…',
         detecting_subtitles:     '正在检测字幕…',
         subtitle_found:          '字幕获取成功！正在处理文本…',
-        no_subtitle:             '未找到字幕，正在下载音频…',
+        no_subtitle:             '未找到字幕，正在下载视频…',
         mode_subtitle:           '⚡ 字幕模式',
         mode_whisper:            '🎙 Whisper 模式',
         completed:               '处理完成！',
@@ -120,8 +141,13 @@ class VideoTranscriber {
 
     this._initElements();
     this._bindEvents();
+    this._switchLang('zh');
+    this._bootstrapSettings();
+  }
+
+  async _bootstrapSettings() {
+    await this._loadLlmPresets();
     this._loadSettings();
-    this._switchLang('en');
   }
 
   /* ── Elements ─────────────────────────────────────────── */
@@ -147,12 +173,20 @@ class VideoTranscriber {
     this.dlScript           = document.getElementById('downloadScript');
     this.dlTranslation      = document.getElementById('downloadTranslation');
     this.dlSummary          = document.getElementById('downloadSummary');
+    this.dlMedia            = document.getElementById('downloadMedia');
+    this.exportBundle       = document.getElementById('exportBundle');
+    this.cacheBadge         = document.getElementById('cacheBadge');
+    this.resultTitle        = document.getElementById('resultTitle');
+    this.resultVideo        = document.getElementById('resultVideo');
+    this.videoEmpty         = document.getElementById('videoEmpty');
+    this.advancedPanel      = document.getElementById('advancedPanel');
     this.translationTabBtn  = document.getElementById('translationTabBtn');
     this.tabBtns            = document.querySelectorAll('.tab-btn');
     this.tabPanes           = document.querySelectorAll('.tab-pane');
     // settings
     this.settingsToggle     = document.getElementById('settingsToggle');
     this.settingsBody       = document.getElementById('settingsBody');
+    this.providerPreset     = document.getElementById('providerPreset');
     this.modelBaseUrl       = document.getElementById('modelBaseUrl');
     this.apiKeyInput        = document.getElementById('apiKeyInput');
     this.fetchModelsBtn     = document.getElementById('fetchModelsBtn');
@@ -183,6 +217,10 @@ class VideoTranscriber {
     // Fetch models
     this.fetchModelsBtn.addEventListener('click', () => this._fetchModels());
 
+    if (this.providerPreset) {
+      this.providerPreset.addEventListener('change', () => this._onProviderChange());
+    }
+
     // Auto-fetch when both fields filled (debounced)
     const debouncedFetch = this._debounce(() => {
       if (this.modelBaseUrl.value.trim() && this.apiKeyInput.value.trim()) this._fetchModels();
@@ -191,7 +229,8 @@ class VideoTranscriber {
     this.apiKeyInput.addEventListener('input', debouncedFetch);
 
     // Persist settings
-    [this.modelBaseUrl, this.apiKeyInput, this.modelSelect, this.summaryLangSel].forEach(el => {
+    [this.modelBaseUrl, this.apiKeyInput, this.modelSelect, this.summaryLangSel, this.providerPreset].forEach(el => {
+      if (!el) return;
       el.addEventListener('change', () => this._saveSettings());
     });
 
@@ -204,6 +243,8 @@ class VideoTranscriber {
     this.dlScript.addEventListener('click',      () => this._downloadFile('script'));
     this.dlTranslation.addEventListener('click', () => this._downloadFile('translation'));
     this.dlSummary.addEventListener('click',     () => this._downloadFile('summary'));
+    if (this.dlMedia) this.dlMedia.addEventListener('click', () => this._downloadMedia());
+    if (this.exportBundle) this.exportBundle.addEventListener('click', () => this._exportBundle());
 
     if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
       this.uploadPickBtn.addEventListener('click', (e) => {
@@ -253,11 +294,7 @@ class VideoTranscriber {
 
     document.querySelectorAll('[data-i18n]').forEach(el => {
       const v = this.t(el.dataset.i18n);
-      if (typeof v === 'string') {
-        // footer 等允许含 HTML 的 key 用 innerHTML，其余保持 textContent
-        if (el.dataset.i18n === 'footer_text') el.innerHTML = v;
-        else el.textContent = v;
-      }
+      if (typeof v === 'string') el.textContent = v;
     });
     document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
       const v = this.t(el.dataset.i18nPlaceholder);
@@ -268,6 +305,7 @@ class VideoTranscriber {
   /* ── Settings persistence ─────────────────────────────── */
   _saveSettings() {
     const s = {
+      provider: this.providerPreset ? this.providerPreset.value : this.currentProviderId,
       baseUrl:  this.modelBaseUrl.value,
       apiKey:   this.apiKeyInput.value,
       model:    this.modelSelect.value,
@@ -276,27 +314,136 @@ class VideoTranscriber {
     try { localStorage.setItem('vt_settings', JSON.stringify(s)); } catch (_) {}
   }
 
+  async _loadLlmPresets() {
+    try {
+      const resp = await fetch(`${this.apiBase}/llm-presets`);
+      if (resp.ok) {
+        this.llmPresets = await resp.json();
+        this.defaultBaseUrl = this.llmPresets.providers?.find(p => p.id === this.llmPresets.default_provider)?.base_url
+          || this.defaultBaseUrl;
+        this.defaultModelId = this.llmPresets.default_model || this.defaultModelId;
+        this.currentProviderId = this.llmPresets.default_provider || 'openrouter';
+      }
+    } catch (e) {
+      console.warn('Failed to load LLM presets:', e);
+    }
+    this._renderProviderOptions();
+  }
+
+  _renderProviderOptions() {
+    if (!this.providerPreset) return;
+    const providers = this.llmPresets?.providers || [
+      { id: 'openrouter', name: 'OpenRouter', base_url: this.defaultBaseUrl },
+    ];
+    this.providerPreset.innerHTML = '';
+    providers.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      opt.title = p.hint || p.base_url;
+      this.providerPreset.appendChild(opt);
+    });
+    this.providerPreset.value = this.currentProviderId;
+  }
+
+  _presetModelsFor(providerId) {
+    const all = this.llmPresets?.recommended_models || [];
+    return all.filter(m => (m.providers || []).includes(providerId));
+  }
+
+  _onProviderChange() {
+    if (!this.providerPreset) return;
+    this.currentProviderId = this.providerPreset.value;
+    const provider = this.llmPresets?.providers?.find(p => p.id === this.currentProviderId);
+    if (provider?.base_url) {
+      this.modelBaseUrl.value = provider.base_url;
+    }
+    this._fetchedModels = [];
+    this._renderModelOptions(this.currentProviderId, [], this.modelSelect.value || this.defaultModelId);
+    this._saveSettings();
+  }
+
+  _renderModelOptions(providerId, extraModels = [], preferredId = '') {
+    const presets = this._presetModelsFor(providerId);
+    const sel = this.modelSelect;
+    sel.innerHTML = '';
+
+    const recommended = document.createElement('optgroup');
+    recommended.label = this.t('models_recommended');
+    presets.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.name ? `${m.name} (${m.id})` : m.id;
+      recommended.appendChild(opt);
+    });
+    sel.appendChild(recommended);
+
+    if (extraModels.length) {
+      const fetched = document.createElement('optgroup');
+      fetched.label = this.t('models_fetched');
+      const seen = new Set(presets.map(p => p.id));
+      extraModels.forEach(m => {
+        const id = m.id || m;
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = m.name || id;
+        fetched.appendChild(opt);
+      });
+      if (fetched.children.length) sel.appendChild(fetched);
+    }
+
+    const fallback = document.createElement('option');
+    fallback.value = '';
+    fallback.textContent = this.t('model_default');
+    sel.appendChild(fallback);
+
+    const pick = preferredId || this.defaultModelId;
+    if ([...sel.options].some(o => o.value === pick)) {
+      sel.value = pick;
+    }
+  }
+
   _loadSettings() {
     try {
       const raw = localStorage.getItem('vt_settings');
-      if (!raw) return;
+      if (!raw) {
+        this.summaryLangSel.value = 'zh';
+        this.modelBaseUrl.value = this.defaultBaseUrl;
+        if (this.providerPreset) this.providerPreset.value = this.currentProviderId;
+        this._renderModelOptions(this.currentProviderId, [], this.defaultModelId);
+        return;
+      }
       const s = JSON.parse(raw);
+      if (s.provider && this.providerPreset) {
+        this.currentProviderId = s.provider;
+        this.providerPreset.value = s.provider;
+      }
       if (s.baseUrl)     this.modelBaseUrl.value = s.baseUrl;
       if (s.apiKey)      this.apiKeyInput.value  = s.apiKey;
       if (s.summaryLang) this.summaryLangSel.value = s.summaryLang;
-      // Model options will be restored after fetching
+      else               this.summaryLangSel.value = 'zh';
       this._savedModel = s.model || '';
+      this._renderModelOptions(
+        this.currentProviderId,
+        this._fetchedModels,
+        this._savedModel || this.defaultModelId,
+      );
 
       // Auto-open settings if credentials were saved
       if (s.baseUrl || s.apiKey) {
         this.settingsBody.classList.add('open');
         this.settingsToggle.classList.add('open');
-        // Attempt to re-fetch model list silently
         if (s.baseUrl && s.apiKey) {
           setTimeout(() => this._fetchModels(true), 400);
         }
       }
     } catch (_) {}
+  }
+
+  _applyDefaultModelOption() {
+    this._renderModelOptions(this.currentProviderId, [], this.defaultModelId);
   }
 
   /* ── Fetch models ─────────────────────────────────────── */
@@ -325,21 +472,14 @@ class VideoTranscriber {
       }
       const data = await resp.json();
       const models = data.data || data.models || [];
+      this._fetchedModels = models;
 
-      // Rebuild select options
-      this.modelSelect.innerHTML = `<option value="">${this.t('model_default')}</option>`;
-      models.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m.id;
-        opt.textContent = m.name || m.id;
-        this.modelSelect.appendChild(opt);
-      });
-
-      // Restore previously selected model
-      if (this._savedModel) {
-        this.modelSelect.value = this._savedModel;
-        this._savedModel = '';
-      }
+      this._renderModelOptions(
+        this.currentProviderId,
+        models,
+        this._savedModel || this.modelSelect.value || this.defaultModelId,
+      );
+      this._savedModel = '';
 
       this._setFetchStatus('ok', typeof this.t('models_loaded') === 'function'
         ? this.t('models_loaded')(models.length)
@@ -399,7 +539,7 @@ class VideoTranscriber {
       this._saveSettings();
 
     } catch (err) {
-      this._showError(this.t('error_processing_failed') + err.message);
+      this._showError(this.t('error_processing_failed') + this._formatRequestError(err));
       this._setLoading(false);
       this._hideProgress();
     }
@@ -461,10 +601,20 @@ class VideoTranscriber {
       this._saveSettings();
 
     } catch (err) {
-      this._showError(this.t('error_processing_failed') + err.message);
+      this._showError(this.t('error_processing_failed') + this._formatRequestError(err));
       this._setLoading(false);
       this._hideProgress();
     }
+  }
+
+  _formatRequestError(err) {
+    const msg = (err && err.message) ? err.message : String(err);
+    if (/load failed|failed to fetch|networkerror|network error/i.test(msg)) {
+      return this.currentLang === 'zh'
+        ? '无法连接后端服务，请确认本地服务已启动（8765 或 8000）'
+        : 'Cannot reach backend — make sure the local server is running (8765 or 8000)';
+    }
+    return msg;
   }
 
   /* ── SSE ──────────────────────────────────────────────── */
@@ -481,7 +631,7 @@ class VideoTranscriber {
 
         if (task.status === 'completed') {
           this._stopSP(); this._stopSSE(); this._setLoading(false); this._hideProgress();
-          this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language);
+          this._showResults(task);
         } else if (task.status === 'error') {
           this._stopSP(); this._stopSSE(); this._setLoading(false); this._hideProgress();
           this._showError(task.error || 'Processing error');
@@ -498,7 +648,7 @@ class VideoTranscriber {
             const task = await r.json();
             if (task?.status === 'completed') {
               this._stopSP(); this._setLoading(false); this._hideProgress();
-              this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language);
+              this._showResults(task);
               return;
             }
           }
@@ -567,6 +717,7 @@ class VideoTranscriber {
     else if (m.includes('转录') || m.includes('transcrib') || m.includes('whisper')) { this.sp.stage = 'transcribing';  this.sp.target = 80; }
     else if (m.includes('优化') || m.includes('optimiz'))                  { this.sp.stage = 'optimizing';    this.sp.target = 90; }
     else if (m.includes('摘要') || m.includes('summary'))                  { this.sp.stage = 'summarizing';   this.sp.target = 95; }
+    else if (m.includes('缓存') || m.includes('cache'))                    { this.sp.stage = 'completed';     this.sp.target = 100; }
     else if (m.includes('完成') || m.includes('complet'))                  { this.sp.stage = 'completed';     this.sp.target = 100; }
 
     if (pct >= this.sp.target) this.sp.target = Math.min(pct + 8, 99);
@@ -671,15 +822,59 @@ class VideoTranscriber {
     return c;
   }
 
-  _showResults(script, summary, videoTitle, translation, detectedLang, summaryLang) {
-    this.scriptContent.innerHTML  = script    ? marked.parse(script)      : '';
-    this.summaryContent.innerHTML = summary   ? marked.parse(summary)     : '';
+  _mediaUrl(task) {
+    const filename = task?.media_filename
+      || (task?.media_path ? task.media_path.split('/').pop() : null);
+    if (!filename) return null;
+    return `${this.apiBase}/download/${encodeURIComponent(filename)}`;
+  }
+
+  _showMediaPreview(task) {
+    const url = this._mediaUrl(task);
+    if (!this.resultVideo || !this.videoEmpty) return;
+
+    if (url) {
+      this.resultVideo.src = url;
+      this.resultVideo.style.display = 'block';
+      this.videoEmpty.style.display = 'none';
+      if (this.dlMedia) this.dlMedia.style.display = 'inline-flex';
+    } else {
+      this.resultVideo.pause();
+      this.resultVideo.removeAttribute('src');
+      this.resultVideo.load();
+      this.resultVideo.style.display = 'none';
+      this.videoEmpty.style.display = 'flex';
+      if (this.dlMedia) this.dlMedia.style.display = 'none';
+    }
+  }
+
+  _showResults(taskOrScript, summary, videoTitle, translation, detectedLang, summaryLang) {
+    const task = (typeof taskOrScript === 'object' && taskOrScript !== null)
+      ? taskOrScript
+      : {
+          script: taskOrScript,
+          summary,
+          video_title: videoTitle,
+          translation,
+          detected_language: detectedLang,
+          summary_language: summaryLang,
+        };
+
+    this.currentTaskMeta = task;
+    const script = task.script;
+    const summaryText = task.summary;
+    const translationText = task.translation;
+    detectedLang = task.detected_language;
+    summaryLang = task.summary_language;
+
+    this.scriptContent.innerHTML  = script      ? marked.parse(script)      : '';
+    this.summaryContent.innerHTML = summaryText ? marked.parse(summaryText) : '';
 
     const d = this._normLangTab(detectedLang);
     const s = this._normLangTab(summaryLang);
-    const showTranslation = Boolean(translation) && d && s && d !== s;
+    const showTranslation = Boolean(translationText) && d && s && d !== s;
     if (showTranslation) {
-      this.translationContent.innerHTML = marked.parse(translation);
+      this.translationContent.innerHTML = marked.parse(translationText);
       this.translationTabBtn.style.display  = 'inline-block';
       this.dlTranslation.style.display      = 'inline-flex';
     } else {
@@ -687,12 +882,41 @@ class VideoTranscriber {
       this.dlTranslation.style.display      = 'none';
     }
 
+    const hasMedia = Boolean(task.media_path || task.media_filename);
+    if (this.cacheBadge) this.cacheBadge.classList.toggle('show', Boolean(task.from_cache));
+    if (this.resultTitle) {
+      this.resultTitle.textContent = task.video_title || '';
+      this.resultTitle.style.display = task.video_title ? 'block' : 'none';
+    }
+    this._showMediaPreview(task);
+    if (this.advancedPanel) this.advancedPanel.open = false;
+
     this.resultsPanel.classList.add('show');
     this._switchTab('script');
     this.resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  _hideResults() { this.resultsPanel.classList.remove('show'); }
+  _hideResults() {
+    this.resultsPanel.classList.remove('show');
+    if (this.cacheBadge) this.cacheBadge.classList.remove('show');
+    if (this.dlMedia) this.dlMedia.style.display = 'none';
+    if (this.advancedPanel) this.advancedPanel.open = false;
+    if (this.resultVideo) {
+      this.resultVideo.pause();
+      this.resultVideo.removeAttribute('src');
+      this.resultVideo.load();
+      this.resultVideo.style.display = 'none';
+    }
+    if (this.videoEmpty) this.videoEmpty.style.display = 'flex';
+    if (this.resultTitle) this.resultTitle.textContent = '';
+  }
+
+  async _fetchCurrentTask() {
+    if (!this.currentTaskId) throw new Error(this.t('error_no_download'));
+    const r = await fetch(`${this.apiBase}/task-status/${this.currentTaskId}`);
+    if (!r.ok) throw new Error('Failed to get task status');
+    return r.json();
+  }
 
   /* ── Tabs ─────────────────────────────────────────────── */
   _switchTab(name) {
@@ -702,27 +926,51 @@ class VideoTranscriber {
 
   /* ── Download ─────────────────────────────────────────── */
   async _downloadFile(type) {
-    if (!this.currentTaskId) { this._showError(this.t('error_no_download')); return; }
     try {
-      const r = await fetch(`${this.apiBase}/task-status/${this.currentTaskId}`);
-      if (!r.ok) throw new Error('Failed to get task status');
-      const task = await r.json();
+      const task = await this._fetchCurrentTask();
 
       let filename;
-      if      (type === 'script')      filename = task.script_path      ? task.script_path.split('/').pop()      : `transcript_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
-      else if (type === 'summary')     filename = task.summary_path     ? task.summary_path.split('/').pop()     : `summary_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
-      else if (type === 'translation') filename = task.translation_path ? task.translation_path.split('/').pop() : `translation_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
+      if      (type === 'script')      filename = task.script_filename      || (task.script_path      ? task.script_path.split('/').pop()      : `transcript_${task.safe_title||'x'}_${task.short_id||'x'}.md`);
+      else if (type === 'summary')     filename = task.summary_filename     || (task.summary_path     ? task.summary_path.split('/').pop()     : `summary_${task.safe_title||'x'}_${task.short_id||'x'}.md`);
+      else if (type === 'translation') filename = task.translation_filename || (task.translation_path ? task.translation_path.split('/').pop() : `translation_${task.safe_title||'x'}_${task.short_id||'x'}.md`);
       else throw new Error('Unknown type');
 
-      const a = document.createElement('a');
-      a.href = `${this.apiBase}/download/${encodeURIComponent(filename)}`;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      this._triggerDownload(`${this.apiBase}/download/${encodeURIComponent(filename)}`, filename);
     } catch (e) {
       this._showError(this.t('error_download_failed') + e.message);
     }
+  }
+
+  async _downloadMedia() {
+    try {
+      const task = await this._fetchCurrentTask();
+      const url = this._mediaUrl(task);
+      if (!url) throw new Error(this.t('error_no_download'));
+      const filename = task.media_filename
+        || (task.media_path ? task.media_path.split('/').pop() : 'video.mp4');
+      this._triggerDownload(url, filename);
+    } catch (e) {
+      this._showError(this.t('error_download_failed') + e.message);
+    }
+  }
+
+  _exportBundle() {
+    if (!this.currentTaskId) {
+      this._showError(this.t('error_no_download'));
+      return;
+    }
+    const task = this.currentTaskMeta || {};
+    const zipName = `${task.safe_title || 'export'}_${task.short_id || this.currentTaskId.slice(0, 6)}.zip`;
+    this._triggerDownload(`${this.apiBase}/export/${encodeURIComponent(this.currentTaskId)}`, zipName);
+  }
+
+  _triggerDownload(url, filename) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
 
   /* ── UI helpers ───────────────────────────────────────── */

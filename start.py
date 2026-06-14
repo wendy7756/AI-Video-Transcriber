@@ -54,8 +54,28 @@ def check_ffmpeg():
         print("  Windows: 从官网下载 https://ffmpeg.org/download.html")
         return False
 
-def setup_environment():
+def setup_environment(desktop: bool = False):
     """设置环境变量"""
+    # Desktop / GUI 启动时 PATH 可能被裁剪，补全 Homebrew 常见路径
+    extra_paths = ["/opt/homebrew/bin", "/usr/local/bin"]
+    current_path = os.environ.get("PATH", "")
+    for p in extra_paths:
+        if p not in current_path.split(os.pathsep):
+            current_path = f"{p}{os.pathsep}{current_path}"
+    os.environ["PATH"] = current_path
+
+    if desktop:
+        os.environ.setdefault("WHISPER_ENGINE", "auto")
+        os.environ.setdefault("WHISPER_SPEED_PRESET", "fast")
+        os.environ.setdefault("WHISPER_DEVICE", "auto")
+        os.environ.setdefault("WHISPER_PRELOAD", "true")
+        os.environ.setdefault("HOST", "127.0.0.1")
+        if not os.getenv("OPENAI_API_KEY"):
+            print("ℹ️  未设置 OPENAI_API_KEY，可在 UI 的 AI Settings 中配置")
+        else:
+            print("✅ 已设置 OpenAI API Key")
+        return True
+
     # 设置OpenAI配置
     if not os.getenv("OPENAI_API_KEY"):
         print("⚠️  警告: 未设置OPENAI_API_KEY环境变量")
@@ -77,10 +97,13 @@ def setup_environment():
 
 def main():
     """主函数"""
+    desktop_mode = "--desktop" in sys.argv
     # 检查是否使用生产模式（禁用热重载）
-    production_mode = "--prod" in sys.argv or os.getenv("PRODUCTION_MODE") == "true"
+    production_mode = "--prod" in sys.argv or desktop_mode or os.getenv("PRODUCTION_MODE") == "true"
     
-    print("🚀 AI视频转录器启动检查")
+    print("🚀 Video Trans 启动检查")
+    if desktop_mode:
+        print("🖥  桌面模式")
     if production_mode:
         print("🔒 生产模式 - 热重载已禁用")
     else:
@@ -96,14 +119,14 @@ def main():
         print("⚠️  FFmpeg未安装，可能影响某些视频格式的处理")
     
     # 设置环境
-    setup_environment()
+    setup_environment(desktop=desktop_mode)
     
     print("\n🎉 启动检查完成!")
     print("=" * 50)
     
     # 启动服务器
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", 8000))
+    host = os.getenv("HOST", "127.0.0.1" if desktop_mode else "0.0.0.0")
+    port = int(os.getenv("PORT", "8765" if desktop_mode else "8000"))
     
     print(f"\n🌐 启动服务器...")
     print(f"   地址: http://localhost:{port}")

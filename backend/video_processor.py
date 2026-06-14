@@ -11,26 +11,127 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_ffmpeg_dir() -> Optional[str]:
+    """Find ffmpeg directory even when PATH is stripped (e.g. Tauri-launched server)."""
+    candidates = [
+        shutil.which("ffmpeg"),
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if path.exists():
+            return str(path.parent)
+    return None
+
+
 class VideoProcessor:
     """视频处理器，使用yt-dlp下载和转换视频"""
     
     def __init__(self):
         self.ydl_opts = {
-            'format': 'bestaudio/best',  # 优先下载最佳音频源
+            'format': 'bestaudio/best',
             'outtmpl': '%(title)s.%(ext)s',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
-                # 直接在提取阶段转换为单声道 16k（空间小且稳定）
                 'preferredcodec': 'm4a',
                 'preferredquality': '192'
             }],
-            # 全局FFmpeg参数：单声道 + 16k 采样率 + faststart
             'postprocessor_args': ['-ac', '1', '-ar', '16000', '-movflags', '+faststart'],
             'prefer_ffmpeg': True,
             'quiet': True,
             'no_warnings': True,
-            'noplaylist': True,  # 强制只下载单个视频，不下载播放列表
+            'noplaylist': True,
         }
+        # 优先下载 mp4 视频（720p 内），再本地抽音频给 Whisper
+        self.video_format = (
+            'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/'
+            'bestvideo[height<=720]+bestaudio/best[ext=mp4]/best'
+        )
+        ffmpeg_dir = _resolve_ffmpeg_dir()
+        if ffmpeg_dir:
+            self.ydl_opts['ffmpeg_location'] = ffmpeg_dir
+            logger.info(f"yt-dlp ffmpeg_location={ffmpeg_dir}")
+        else:
+            logger.warning("未找到 ffmpeg，YouTube 下载后处理可能失败")
+
+    def _base_ydl_opts(self, outtmpl: str) -> dict:
+        opts = {
+            'outtmpl': outtmpl,
+            'prefer_ffmpeg': True,
+            'quiet': True,
+            'no_warnings': True,
+            'noplaylist': True,
+        }
+        if self.ydl_opts.get('ffmpeg_location'):
+            opts['ffmpeg_location'] = self.ydl_opts['ffmpeg_location']
+        return opts
+
+    async def extract_whisper_audio(self, video_path: Path, output_dir: Path, unique_id: str) -> str:
+        """从视频文件提取 Whisper 用单声道 16kHz m4a。"""
+        output_dir.mkdir(exist_ok=True)
+        audio_path = output_dir / f"audio_{unique_id}.m4a"
+        ffmpeg = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+        cmd = [
+            ffmpeg, "-y", "-nostdin", "-i", str(video_path.resolve()),
+            "-vn", "-ac", "1", "-ar", "16000",
+            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+            str(audio_path.resolve()),
+        ]
+
+        def _run():
+            r = subprocess.run(cmd, capture_output=True, text=True)
+            if r.returncode != 0:
+                err = (r.stderr or r.stdout or "").strip()
+                raise Exception(f"音频提取失败: {err[:800]}")
+            if not audio_path.exists():
+                raise Exception("音频提取未生成文件")
+
+        await asyncio.to_thread(_run)
+        return str(audio_path)
+
+    async def download_video(
+        self,
+        url: str,
+        output_dir: Path,
+        prefetched_title: Optional[str] = None,
+    ) -> tuple[str, str]:
+        """下载 mp4 视频，作为用户导出的第一产物。Returns (video_path, video_title)."""
+        output_dir.mkdir(exist_ok=True)
+        unique_id = str(uuid.uuid4())[:8]
+        output_template = str(output_dir / f"video_{unique_id}.%(ext)s")
+        ydl_opts = self._base_ydl_opts(output_template)
+        ydl_opts.update({
+            'format': self.video_format,
+            'merge_output_format': 'mp4',
+        })
+
+        logger.info(f"开始下载视频文件: {url}")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            if prefetched_title:
+                video_title = prefetched_title
+                logger.info(f"复用预取标题，跳过 extract_info: {video_title}")
+            else:
+                info = await asyncio.to_thread(ydl.extract_info, url, False)
+                video_title = info.get('title', 'unknown')
+                logger.info(f"视频标题: {video_title}")
+            await asyncio.to_thread(ydl.download, [url])
+
+        video_file = output_dir / f"video_{unique_id}.mp4"
+        if not video_file.exists():
+            for ext in ('webm', 'mkv', 'mov'):
+                candidate = output_dir / f"video_{unique_id}.{ext}"
+                if candidate.exists():
+                    video_file = candidate
+                    break
+            else:
+                raise Exception("未找到下载的视频文件")
+
+        logger.info(f"视频文件已保存: {video_file}")
+        return str(video_file), video_title
 
     async def normalize_local_media_to_m4a(self, input_path: Path, output_dir: Path) -> str:
         """
@@ -329,86 +430,19 @@ class VideoProcessor:
         url: str,
         output_dir: Path,
         prefetched_title: Optional[str] = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """
-        下载视频并转换为m4a格式。
+        下载 mp4 视频（第一产物），并提取 Whisper 用音频。
 
-        prefetched_title: 若调用方已通过 fetch_subtitles 探测过视频信息，
-        可直接传入视频标题，跳过重复的 extract_info 网络请求。
+        Returns:
+            (audio_path, video_title, video_path)
         """
         try:
-            # 创建输出目录
-            output_dir.mkdir(exist_ok=True)
-            
-            # 生成唯一的文件名
             unique_id = str(uuid.uuid4())[:8]
-            output_template = str(output_dir / f"audio_{unique_id}.%(ext)s")
-            
-            # 更新yt-dlp选项
-            ydl_opts = self.ydl_opts.copy()
-            ydl_opts['outtmpl'] = output_template
-            
-            logger.info(f"开始下载视频: {url}")
-            
-            import asyncio
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                if prefetched_title:
-                    # 标题和时长已在 fetch_subtitles 中获取，直接下载，跳过重复探测
-                    video_title = prefetched_title
-                    expected_duration = 0
-                    logger.info(f"复用预取标题，跳过 extract_info: {video_title}")
-                else:
-                    # 获取视频信息（放到线程池避免阻塞事件循环）
-                    info = await asyncio.to_thread(ydl.extract_info, url, False)
-                    video_title = info.get('title', 'unknown')
-                    expected_duration = info.get('duration') or 0
-                    logger.info(f"视频标题: {video_title}")
-                
-                # 下载视频（放到线程池避免阻塞事件循环）
-                await asyncio.to_thread(ydl.download, [url])
-            
-            # 查找生成的m4a文件
-            audio_file = str(output_dir / f"audio_{unique_id}.m4a")
-            
-            if not os.path.exists(audio_file):
-                # 如果m4a文件不存在，查找其他音频格式
-                for ext in ['webm', 'mp4', 'mp3', 'wav']:
-                    potential_file = str(output_dir / f"audio_{unique_id}.{ext}")
-                    if os.path.exists(potential_file):
-                        audio_file = potential_file
-                        break
-                else:
-                    raise Exception("未找到下载的音频文件")
-            
-            # 校验时长，如果和源视频差异较大，尝试一次ffmpeg规范化重封装
-            try:
-                import subprocess, shlex
-                probe_cmd = f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 {shlex.quote(audio_file)}"
-                out = subprocess.check_output(probe_cmd, shell=True).decode().strip()
-                actual_duration = float(out) if out else 0.0
-            except Exception as _:
-                actual_duration = 0.0
-            
-            if expected_duration and actual_duration and abs(actual_duration - expected_duration) / expected_duration > 0.1:
-                logger.warning(
-                    f"音频时长异常，期望{expected_duration}s，实际{actual_duration}s，尝试重封装修复…"
-                )
-                try:
-                    fixed_path = str(output_dir / f"audio_{unique_id}_fixed.m4a")
-                    fix_cmd = f"ffmpeg -y -i {shlex.quote(audio_file)} -vn -c:a aac -b:a 160k -movflags +faststart {shlex.quote(fixed_path)}"
-                    subprocess.check_call(fix_cmd, shell=True)
-                    # 用修复后的文件替换
-                    audio_file = fixed_path
-                    # 重新探测
-                    out2 = subprocess.check_output(probe_cmd.replace(shlex.quote(audio_file.rsplit('.',1)[0]+'.m4a'), shlex.quote(audio_file)), shell=True).decode().strip()
-                    actual_duration2 = float(out2) if out2 else 0.0
-                    logger.info(f"重封装完成，新时长≈{actual_duration2:.2f}s")
-                except Exception as e:
-                    logger.error(f"重封装失败：{e}")
-            
-            logger.info(f"音频文件已保存: {audio_file}")
-            return audio_file, video_title
-            
+            video_path, video_title = await self.download_video(url, output_dir, prefetched_title)
+            audio_path = await self.extract_whisper_audio(Path(video_path), output_dir, unique_id)
+            logger.info(f"音频提取完成: {audio_path}")
+            return audio_path, video_title, video_path
         except Exception as e:
             logger.error(f"下载视频失败: {str(e)}")
             raise Exception(f"下载视频失败: {str(e)}")

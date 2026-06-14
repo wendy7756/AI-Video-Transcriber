@@ -3,6 +3,7 @@ uvicorn[standard]>=0.27.0
 python-multipart>=0.0.9
 yt-dlp>=2024.12.13
 faster-whisper>=1.1.0
+mlx-whisper>=0.4.0; platform_system == "Darwin" and platform_machine == "arm64"
 openai>=1.51.0
 pydantic>=2.7.0
 aiofiles>=24.1.0

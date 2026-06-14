@@ -6,6 +6,7 @@ from typing import Optional
 from openai import OpenAI
 
 from llm_sanitize import strip_llm_artifacts
+from summarizer import DEFAULT_LLM_MODEL, DEFAULT_OPENAI_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,9 @@ class Translator:
         model: Optional[str] = None,
     ):
         self.client = None
-        self._translation_model = model or os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o")
+        self._translation_model = (
+            model or os.getenv("OPENAI_TRANSLATION_MODEL") or os.getenv("OPENAI_MODEL") or DEFAULT_LLM_MODEL
+        )
 
         self.language_map = {
             "zh": "中文（简体）",
@@ -43,10 +46,10 @@ class Translator:
         )
         if isinstance(api_key, str) and api_key.strip():
             eff_base = (base_url or "").strip().rstrip("/") or os.getenv(
-                "OPENAI_BASE_URL", "https://api.openai.com/v1"
+                "OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL
             )
         else:
-            eff_base = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+            eff_base = os.getenv("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL)
 
         if not eff_key:
             logger.warning("未设置可用的 OpenAI API Key，翻译将不可用")

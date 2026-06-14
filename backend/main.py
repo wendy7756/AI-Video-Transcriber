@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -12,17 +13,38 @@ import uuid
 import json
 import re
 import openai
+import zipfile
+import io
 
 from video_processor import VideoProcessor
 from transcriber import Transcriber
 from summarizer import Summarizer
 from translator import Translator
+from llm_presets import llm_presets_payload
+from cache_manager import (
+    TranscriptCache,
+    normalize_url,
+    source_key_from_file,
+    source_key_from_url,
+)
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="AI视频转录器", version="1.0.0")
+transcriber = Transcriber.from_env()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    preload = os.getenv("WHISPER_PRELOAD", "true").lower() in ("1", "true", "yes")
+    if preload:
+        logger.info(f"预加载 Whisper 模型: {transcriber.describe()}")
+        asyncio.create_task(asyncio.to_thread(transcriber.preload))
+    yield
+
+
+app = FastAPI(title="AI视频转录器", version="1.0.0", lifespan=lifespan)
 
 # CORS中间件配置
 app.add_middleware(
@@ -42,10 +64,11 @@ app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="
 # 创建临时目录
 TEMP_DIR = PROJECT_ROOT / "temp"
 TEMP_DIR.mkdir(exist_ok=True)
+CACHE_DIR = PROJECT_ROOT / "cache"
+transcript_cache = TranscriptCache(CACHE_DIR)
 
 # 初始化处理器
 video_processor = VideoProcessor()
-transcriber = Transcriber()
 summarizer = Summarizer()
 translator = Translator()
 
@@ -107,6 +130,59 @@ sse_connections = {}
 # 本地上传：允许的类型与大小上限（MB），可用环境变量 UPLOAD_MAX_MB 调整
 UPLOAD_ALLOWED_EXT = frozenset({".txt", ".mp3", ".mp4", ".m4a", ".wav", ".webm", ".mkv", ".ogg", ".flac"})
 UPLOAD_MAX_MB = int(os.getenv("UPLOAD_MAX_MB", "200"))
+ALLOWED_DOWNLOAD_EXT = frozenset({
+    ".md", ".m4a", ".mp4", ".webm", ".mkv", ".mp3", ".wav", ".txt",
+})
+
+
+def _safe_filename(filename: str) -> bool:
+    return bool(filename) and ".." not in filename and "/" not in filename and "\\" not in filename
+
+
+def _resolve_download_path(filename: str) -> Optional[Path]:
+    if not _safe_filename(filename):
+        return None
+    direct = TEMP_DIR / filename
+    if direct.exists():
+        return direct
+    for source_key in (transcript_cache._index.get("entries") or {}):
+        cached = transcript_cache.resolve_file(source_key, filename)
+        if cached:
+            return cached
+    return None
+
+
+def _media_cache_filename(media_path: Optional[Path]) -> Optional[str]:
+    if not media_path or not media_path.exists():
+        return None
+    suffix = media_path.suffix.lower() or ".bin"
+    return f"media{suffix}"
+
+
+async def _complete_from_cache(
+    task_id: str,
+    cached: dict,
+    source_ref: str,
+    dedup_url: Optional[str] = None,
+) -> None:
+    try:
+        tasks[task_id].update({
+            "status": "processing",
+            "progress": 90,
+            "message": "命中本地缓存，正在加载转写结果...",
+        })
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+        await asyncio.sleep(0.05)
+
+        tasks[task_id].update(transcript_cache.hydrate_task(cached, task_id, source_ref))
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+    finally:
+        if dedup_url:
+            processing_urls.discard(dedup_url)
+        if task_id in active_tasks:
+            del active_tasks[task_id]
 
 
 def _sanitize_title_for_filename(title: str) -> str:
@@ -147,6 +223,8 @@ async def _run_post_extract_pipeline(
     api_key: str = "",
     model_base_url: str = "",
     model_id: str = "",
+    source_key: Optional[str] = None,
+    media_src: Optional[Path] = None,
 ) -> None:
     """取得 raw_script 后的共用管线：归档、优化、翻译、摘要、广播。"""
     short_id = task_id.replace("-", "")[:6]
@@ -262,6 +340,8 @@ async def _run_post_extract_pipeline(
         "summary": summary_with_source,
         "script_path": str(script_path),
         "summary_path": str(summary_path),
+        "script_filename": script_path.name,
+        "summary_filename": summary_filename,
         "short_id": short_id,
         "safe_title": safe_title,
         "detected_language": detected_language,
@@ -275,11 +355,45 @@ async def _run_post_extract_pipeline(
             "translation_filename": translation_filename,
         })
 
+    media_filename = _media_cache_filename(media_src)
+    if media_src and media_src.exists():
+        task_result["media_path"] = str(media_src.resolve())
+        task_result["media_filename"] = media_src.name
+
     tasks[task_id].update(task_result)
     save_tasks(tasks)
     logger.info(f"任务完成，准备广播最终状态: {task_id}")
     await broadcast_task_update(task_id, tasks[task_id])
     logger.info(f"最终状态已广播: {task_id}")
+
+    if source_key:
+        try:
+            cache_media_name = media_filename or (media_src.name if media_src else None)
+            transcript_cache.put(
+                source_key,
+                summary_language,
+                {
+                    "source_ref": source_ref,
+                    "normalized_url": normalize_url(source_ref)
+                    if source_ref.startswith("http")
+                    else None,
+                    "video_title": video_title,
+                    "detected_language": detected_language,
+                    "script": script_with_title,
+                    "summary": summary_with_source,
+                    "translation": translation_with_title if translation_content else None,
+                    "script_filename": script_path.name,
+                    "summary_filename": summary_filename,
+                    "translation_filename": translation_filename if translation_content else None,
+                    "media_filename": cache_media_name,
+                    "safe_title": safe_title,
+                },
+                media_src=media_src,
+            )
+            tasks[task_id]["cache_source_key"] = source_key
+            save_tasks(tasks)
+        except Exception as e:
+            logger.error(f"写入本地缓存失败: {e}")
 
     if dedup_url:
         processing_urls.discard(dedup_url)
@@ -291,6 +405,24 @@ async def _run_post_extract_pipeline(
 async def read_root():
     """返回前端页面"""
     return FileResponse(str(PROJECT_ROOT / "static" / "index.html"))
+
+@app.get("/api/health")
+async def health():
+    """Lightweight readiness probe for desktop client startup."""
+    port = int(os.getenv("PORT", "8765"))
+    return {"status": "ok", "service": "video-trans", "port": port}
+
+
+@app.get("/api/transcriber-info")
+async def transcriber_info():
+    """返回 Whisper 引擎检测结果与当前配置。"""
+    return transcriber.info()
+
+
+@app.get("/api/llm-presets")
+async def llm_presets():
+    """返回三方 LLM 提供商与推荐模型预设。"""
+    return llm_presets_payload()
 
 @app.post("/api/models")
 async def list_models(
@@ -366,6 +498,27 @@ async def _enqueue_upload_job(
 
     video_title = _sanitize_title_for_filename(Path(safe_name).stem) or "upload"
     source_label = f"upload:{safe_name}"
+    source_key = source_key_from_file(dest)
+
+    cached = transcript_cache.get(source_key, summary_language)
+    if cached:
+        tasks[task_id] = {
+            "status": "processing",
+            "progress": 0,
+            "message": "命中本地缓存，跳过重复转写...",
+            "script": None,
+            "summary": None,
+            "error": None,
+            "url": source_label,
+        }
+        save_tasks(tasks)
+        bg = asyncio.create_task(_complete_from_cache(task_id, cached, source_label))
+        active_tasks[task_id] = bg
+        return {
+            "task_id": task_id,
+            "message": "命中本地缓存，跳过重复转写",
+            "from_cache": True,
+        }
 
     tasks[task_id] = {
         "status": "processing",
@@ -424,6 +577,28 @@ async def process_video(
 
         url = stripped
 
+        source_key = source_key_from_url(url)
+        cached = transcript_cache.get(source_key, summary_language)
+        if cached:
+            task_id = str(uuid.uuid4())
+            tasks[task_id] = {
+                "status": "processing",
+                "progress": 0,
+                "message": "命中本地缓存，跳过重复转写...",
+                "script": None,
+                "summary": None,
+                "error": None,
+                "url": url,
+            }
+            save_tasks(tasks)
+            task = asyncio.create_task(_complete_from_cache(task_id, cached, url, dedup_url=url))
+            active_tasks[task_id] = task
+            return {
+                "task_id": task_id,
+                "message": "命中本地缓存，跳过重复转写",
+                "from_cache": True,
+            }
+
         # 检查是否已经在处理相同的URL
         if url in processing_urls:
             # 查找现有任务
@@ -473,6 +648,7 @@ async def process_video_task(
     异步处理视频任务
     """
     try:
+        source_key = source_key_from_url(url)
         # ── 阶段一：优先尝试获取平台字幕（快速路径） ──────────────────────
         tasks[task_id].update({
             "status": "processing",
@@ -496,6 +672,7 @@ async def process_video_task(
             request_summarizer = summarizer  # 全局实例（使用环境变量）
 
         subtitle_text, sub_title, sub_lang = await video_processor.fetch_subtitles(url, TEMP_DIR)
+        media_src: Optional[Path] = None
 
         if subtitle_text:
             # ── 快速路径：有字幕，跳过音频下载和 Whisper ──────────────────
@@ -506,26 +683,32 @@ async def process_video_task(
 
             tasks[task_id].update({
                 "progress": 40,
-                "message": f"字幕获取成功（{sub_lang}），正在处理文本..."
-            })
-            save_tasks(tasks)
-            await broadcast_task_update(task_id, tasks[task_id])
-        else:
-            # ── 慢速路径：无字幕，下载音频 → Whisper 转录 ─────────────────
-            tasks[task_id].update({
-                "progress": 15,
-                "message": "未找到字幕，正在下载视频音频..."
+                "message": f"字幕获取成功（{sub_lang}），正在下载视频..."
             })
             save_tasks(tasks)
             await broadcast_task_update(task_id, tasks[task_id])
 
-            audio_path, video_title = await video_processor.download_and_convert(
+            try:
+                video_path, _ = await video_processor.download_video(url, TEMP_DIR, video_title)
+                media_src = Path(video_path)
+            except Exception as e:
+                logger.warning(f"视频下载失败（仍保留字幕转写）: {e}")
+        else:
+            # ── 慢速路径：无字幕，下载音频 → Whisper 转录 ─────────────────
+            tasks[task_id].update({
+                "progress": 15,
+                "message": "未找到字幕，正在下载视频..."
+            })
+            save_tasks(tasks)
+            await broadcast_task_update(task_id, tasks[task_id])
+
+            audio_path, video_title, video_path = await video_processor.download_and_convert(
                 url, TEMP_DIR, prefetched_title=sub_title or None
             )
 
             tasks[task_id].update({
                 "progress": 35,
-                "message": "音频下载完成，准备转录..."
+                "message": "视频下载完成，准备转录..."
             })
             save_tasks(tasks)
             await broadcast_task_update(task_id, tasks[task_id])
@@ -538,6 +721,7 @@ async def process_video_task(
             await broadcast_task_update(task_id, tasks[task_id])
 
             raw_script = await transcriber.transcribe(audio_path)
+            media_src = Path(video_path)
 
         await _run_post_extract_pipeline(
             task_id=task_id,
@@ -550,6 +734,8 @@ async def process_video_task(
             api_key=api_key,
             model_base_url=model_base_url,
             model_id=model_id,
+            source_key=source_key,
+            media_src=media_src,
         )
 
         # 不要立即删除临时文件！保留给用户下载
@@ -598,6 +784,8 @@ async def process_upload_task(
     model_id: str = "",
 ):
     source_ref = f"upload:{original_name}"
+    source_key = source_key_from_file(saved_path)
+    media_src: Optional[Path] = saved_path if ext_lower != ".txt" else None
     try:
         if api_key:
             effective_url = model_base_url.rstrip("/") or None
@@ -650,6 +838,8 @@ async def process_upload_task(
             await broadcast_task_update(task_id, tasks[task_id])
 
             raw_script = await transcriber.transcribe(audio_path)
+            if saved_path.exists() and ext_lower != ".txt":
+                media_src = saved_path
 
         await _run_post_extract_pipeline(
             task_id=task_id,
@@ -662,6 +852,8 @@ async def process_upload_task(
             api_key=api_key,
             model_base_url=model_base_url,
             model_id=model_id,
+            source_key=source_key,
+            media_src=media_src,
         )
 
     except Exception as e:
@@ -750,32 +942,95 @@ async def task_stream(task_id: str):
 
 @app.get("/api/download/{filename}")
 async def download_file(filename: str):
-    """
-    直接从temp目录下载文件（简化方案）
-    """
+    """Download transcript, summary, or cached media from temp or local cache."""
     try:
-        # 检查文件扩展名安全性
-        if not filename.endswith('.md'):
-            raise HTTPException(status_code=400, detail="仅支持下载.md文件")
-        
-        # 检查文件名格式（防止路径遍历攻击）
-        if '..' in filename or '/' in filename or '\\' in filename:
+        if not _safe_filename(filename):
             raise HTTPException(status_code=400, detail="文件名格式无效")
-            
-        file_path = TEMP_DIR / filename
-        if not file_path.exists():
+
+        suffix = Path(filename).suffix.lower()
+        if suffix not in ALLOWED_DOWNLOAD_EXT:
+            raise HTTPException(status_code=400, detail="不支持的文件类型")
+
+        file_path = _resolve_download_path(filename)
+        if not file_path or not file_path.exists():
             raise HTTPException(status_code=404, detail="文件不存在")
-            
+
+        media_types = {
+            ".md": "text/markdown; charset=utf-8",
+            ".txt": "text/plain; charset=utf-8",
+            ".m4a": "audio/mp4",
+            ".mp3": "audio/mpeg",
+            ".wav": "audio/wav",
+            ".mp4": "video/mp4",
+            ".webm": "video/webm",
+            ".mkv": "video/x-matroska",
+        }
         return FileResponse(
             file_path,
             filename=filename,
-            media_type="text/markdown"
+            media_type=media_types.get(suffix, "application/octet-stream"),
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"下载文件失败: {e}")
         raise HTTPException(status_code=500, detail=f"下载失败: {str(e)}")
+
+
+def _task_media_path(task: dict) -> Optional[Path]:
+    media_path = task.get("media_path")
+    if media_path:
+        path = Path(media_path)
+        if path.exists():
+            return path
+    cache_key = task.get("cache_source_key")
+    media_filename = task.get("media_filename")
+    if cache_key and media_filename:
+        cached = transcript_cache.resolve_file(cache_key, media_filename)
+        if cached:
+            return cached
+    return None
+
+
+@app.get("/api/export/{task_id}")
+async def export_task_bundle(task_id: str):
+    """Zip transcript markdown with local audio/video when available."""
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    task = tasks[task_id]
+    if task.get("status") != "completed":
+        raise HTTPException(status_code=400, detail="任务尚未完成，无法导出")
+
+    safe_title = task.get("safe_title") or "export"
+    short_id = task.get("short_id") or task_id.replace("-", "")[:6]
+    zip_name = f"{safe_title}_{short_id}.zip"
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        script_name = task.get("script_filename")
+        if not script_name and task.get("script_path"):
+            script_name = Path(task["script_path"]).name
+        if script_name:
+            script_path = _resolve_download_path(script_name)
+            if script_path and script_path.exists():
+                zf.write(script_path, f"{safe_title}_transcript.md")
+
+        media_path = _task_media_path(task)
+        if media_path:
+            suffix = media_path.suffix.lower() or ".mp4"
+            label = "video" if suffix in {".mp4", ".webm", ".mkv", ".mov"} else "media"
+            zf.write(media_path, f"{safe_title}_{label}{suffix}")
+
+        if zf.namelist() == []:
+            raise HTTPException(status_code=404, detail="没有可导出的文件")
+
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+    )
 
 
 @app.delete("/api/task/{task_id}")

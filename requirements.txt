@@ -6,3 +6,5 @@ faster-whisper>=1.1.0
 openai>=1.51.0
 pydantic>=2.7.0
 aiofiles>=24.1.0
+# Optional: TwelveLabs Pegasus transcription backend (enabled via USE_TWELVELABS)
+twelvelabs>=1.2.8

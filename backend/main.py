@@ -15,6 +15,7 @@ import openai
 
 from video_processor import VideoProcessor
 from transcriber import Transcriber
+from pegasus_transcriber import PegasusTranscriber
 from summarizer import Summarizer
 from translator import Translator
 
@@ -48,6 +49,12 @@ video_processor = VideoProcessor()
 transcriber = Transcriber()
 summarizer = Summarizer()
 translator = Translator()
+
+# 可选后端：TwelveLabs Pegasus 直接转录视频 URL（服务端原生支持长视频）。
+# 仅当显式开启 USE_TWELVELABS 且配置了 TWELVELABS_API_KEY 时启用，默认关闭，
+# 不影响既有 字幕优先 / Whisper 回退 行为。
+USE_TWELVELABS = os.getenv("USE_TWELVELABS", "").strip().lower() in {"1", "true", "yes", "on"}
+pegasus_transcriber = PegasusTranscriber()
 
 # 存储任务状态 - 使用文件持久化
 import threading
@@ -494,6 +501,56 @@ async def process_video_task(
             logger.info(f"使用前端提供的 API Key，base_url={effective_url}, model={model_id or 'default'}")
         else:
             request_summarizer = summarizer  # 全局实例（使用环境变量）
+
+        # ── 可选：TwelveLabs Pegasus 路径（开启时优先于字幕/Whisper） ────────
+        # Pegasus 直接处理视频 URL，原生支持长视频，无需下载音频。失败时回退
+        # 至既有字幕/Whisper 流程，保证非破坏性。
+        raw_script = None
+        video_title = None
+        if USE_TWELVELABS and pegasus_transcriber.is_available():
+            try:
+                tasks[task_id].update({
+                    "progress": 30,
+                    "message": "正在使用 TwelveLabs Pegasus 转录视频..."
+                })
+                save_tasks(tasks)
+                await broadcast_task_update(task_id, tasks[task_id])
+
+                raw_script = await pegasus_transcriber.transcribe_url(url)
+                # 复用全局 transcriber 的语言字段，保持下游逻辑一致
+                transcriber.last_detected_language = None
+                # 尝试用 yt-dlp 仅探测标题（不下载），失败则用 URL 兜底
+                try:
+                    _, sub_title_probe, _ = await video_processor.fetch_subtitles(url, TEMP_DIR)
+                    video_title = sub_title_probe or url
+                except Exception:
+                    video_title = url
+
+                tasks[task_id].update({
+                    "progress": 40,
+                    "message": "Pegasus 转录完成，正在处理文本..."
+                })
+                save_tasks(tasks)
+                await broadcast_task_update(task_id, tasks[task_id])
+            except Exception as e:
+                logger.warning(f"Pegasus 转录失败，回退至字幕/Whisper 流程: {e}")
+                raw_script = None
+                video_title = None
+
+        if raw_script is not None:
+            await _run_post_extract_pipeline(
+                task_id=task_id,
+                raw_script=raw_script,
+                video_title=video_title or url,
+                source_ref=url,
+                summary_language=summary_language,
+                request_summarizer=request_summarizer,
+                dedup_url=url,
+                api_key=api_key,
+                model_base_url=model_base_url,
+                model_id=model_id,
+            )
+            return
 
         subtitle_text, sub_title, sub_lang = await video_processor.fetch_subtitles(url, TEMP_DIR)
 

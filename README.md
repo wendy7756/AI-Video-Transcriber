@@ -16,6 +16,7 @@ An AI-powered tool to transcribe and summarize videos and podcasts — paste a U
 - 📁 **Local File Upload**: Drag-and-drop or pick a file — supported formats include `.txt` (treated as transcript text), `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`. Media is normalized with FFmpeg for Whisper; the same optimize → translate → summarize pipeline runs as for URLs
 - ⚡ **Subtitle-First Architecture**: For platforms with native subtitles (e.g. YouTube), transcripts are extracted instantly — no audio download needed. Whisper is only used as a fallback, making the whole pipeline dramatically faster.
 - 🗣️ **Intelligent Transcription**: High-accuracy speech-to-text using Faster-Whisper when subtitles aren't available
+- 🎬 **Optional Pegasus Backend**: Opt in to [TwelveLabs](https://twelvelabs.io) Pegasus to transcribe a video URL natively — long-video support, processed server-side with no audio download. Enabled via `USE_TWELVELABS`; falls back to subtitles/Whisper on error
 - 🤖 **AI Text Optimization**: Automatic typo correction, sentence completion, and intelligent paragraphing
 - 🌍 **Multi-Language Summaries**: Generate intelligent summaries in multiple languages
 - 🔧 **Bring Your Own Model**: Configure any OpenAI-compatible API endpoint (OpenAI, OpenRouter, local LLM, etc.) directly in the UI — enter your API Base URL and API Key, then click **Fetch** to auto-discover all available models and select the one you want
@@ -161,7 +162,8 @@ AI-Video-Transcriber/
 ├── backend/                 # Backend code
 │   ├── main.py             # FastAPI main application
 │   ├── video_processor.py  # Video processing module
-│   ├── transcriber.py      # Transcription module
+│   ├── transcriber.py      # Transcription module (Faster-Whisper)
+│   ├── pegasus_transcriber.py # Optional TwelveLabs Pegasus transcription backend
 │   ├── summarizer.py       # Summary module
 │   ├── translator.py       # Translation module
 │   └── llm_sanitize.py     # Post-process LLM outputs (strip boilerplate)
@@ -189,6 +191,9 @@ AI-Video-Transcriber/
 | `PORT` | Server port | `8000` | No |
 | `WHISPER_MODEL_SIZE` | Whisper model size | `base` | No |
 | `UPLOAD_MAX_MB` | Maximum upload size for local files (MB) | `200` | No |
+| `USE_TWELVELABS` | Use TwelveLabs Pegasus to transcribe video URLs (opt-in) | `false` | No |
+| `TWELVELABS_API_KEY` | TwelveLabs API key (required when `USE_TWELVELABS=true`) | - | No |
+| `TWELVELABS_MODEL` | Pegasus model name | `pegasus1.5` | No |
 
 An optional dedicated endpoint `POST /api/process-upload` exists with the same behavior as sending `file` to `/api/process-video`.
 
@@ -212,6 +217,9 @@ A: All platforms supported by yt-dlp, including but not limited to: YouTube, Tik
 
 ### Q: What local file types and size limits apply?
 A: Allowed extensions include `.txt`, `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`. Default max size is **200 MB** per file; override with the `UPLOAD_MAX_MB` environment variable on the server.
+
+### Q: How do I use the TwelveLabs Pegasus backend?
+A: Set `USE_TWELVELABS=true` and `TWELVELABS_API_KEY` in your environment (or `.env`). When enabled, video **URLs** are transcribed by Pegasus directly — it fetches and processes the video server-side with native long-video support, skipping the audio download and Whisper. The transcript then flows through the same optimize → translate → summarize pipeline. If a Pegasus request fails, processing automatically falls back to the subtitle/Whisper path, so the feature is safe to leave on. Local file uploads always use Whisper. You can grab a free API key at [twelvelabs.io](https://twelvelabs.io).
 
 ### Q: What if the AI optimization features are unavailable?
 A: AI features require an API key from any OpenAI-compatible provider (OpenAI, OpenRouter, etc.). You can enter it directly in the **AI Settings** panel in the UI — no server restart needed. Alternatively, set `OPENAI_API_KEY` as an environment variable for a server-side default.

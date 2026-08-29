@@ -24,11 +24,15 @@ class Transcriber:
         if self.model is None:
             logger.info(f"正在加载Whisper模型: {self.model_size}")
             try:
-                self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
-                logger.info("模型加载完成")
+                # 使用GPU进行转录，优化内存使用
+                self.model = WhisperModel(self.model_size, device="cuda", compute_type="float16")
+                logger.info("模型加载完成（使用GPU）")
             except Exception as e:
-                logger.error(f"模型加载失败: {str(e)}")
-                raise Exception(f"模型加载失败: {str(e)}")
+                logger.error(f"GPU模型加载失败: {str(e)}")
+                logger.info("尝试使用CPU作为备选方案")
+                # 如果GPU不可用，回退到CPU
+                self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+                logger.info("模型加载完成（使用CPU备选方案）")
     
     async def transcribe(self, audio_path: str, language: Optional[str] = None) -> str:
         """

@@ -989,9 +989,15 @@ async def delete_task(task_id: str):
     task_url = tasks[task_id].get("url")
     if task_url:
         processing_urls.discard(task_url)
+
+    # 清理该任务的SSE连接
+    if task_id in sse_connections:
+        del sse_connections[task_id]
     
-    # 删除任务记录
+    # 删除任务记录并持久化
     del tasks[task_id]
+    save_tasks(tasks)
+
     return {"message": "任务已取消并删除"}
 
 @app.get("/api/tasks/active")

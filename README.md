@@ -653,6 +653,7 @@ The full product goes further:
 
 - Recording a video? Try the [best free teleprompter](https://teleprompter.works) — use the browser version or download the [app version]((https://apps.apple.com/app/teleprompter-scrolling-scripts/id6767148844))for a better experience.
 - Growing a product on Pinterest? [GetPinFast](https://getpin.fast) is a Pinterest growth tool for more traffic and conversions.
+- Writing through your thoughts? [3 Pages Daily](https://3pagesdaily.com) helps you remember the past, make sense of the present, and shape what comes next.
 
 ---
 

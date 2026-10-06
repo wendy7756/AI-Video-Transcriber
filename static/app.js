@@ -38,6 +38,10 @@ class VideoTranscriber {
         download_transcript:     'Download transcript',
         download_translation:    'Download translation',
         download_summary:        'Download summary',
+        copy_transcript:         'Copy transcript',
+        copy_translation:        'Copy translation',
+        copy_summary:            'Copy summary',
+        error_copy_failed:       'Copy failed: ',
         empty_hint:              'Paste a video URL or drop a file above and let AI do the heavy lifting.',
         footer_text:             'This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:#fff;text-decoration:none;">sipsip.ai</a> — distill anything and get daily AI briefs from your favorite creators',
         processing:              'Processing…',
@@ -96,6 +100,10 @@ class VideoTranscriber {
         download_transcript:     '下载转录文本',
         download_translation:    '下载翻译',
         download_summary:        '下载摘要',
+        copy_transcript:         '复制转录文本',
+        copy_translation:        '复制翻译',
+        copy_summary:            '复制摘要',
+        error_copy_failed:       '复制失败：',
         empty_hint:              '在上方粘贴视频链接或拖放文件，让 AI 来处理一切。',
         footer_text:             '本工具是 <a href="https://sipsip.ai" target="_blank" style="color:#fff;text-decoration:none;">sipsip.ai</a> 的一部分 — 提取任何内容要点并构建你自己的知识库。',
         processing:              '处理中…',
@@ -164,6 +172,9 @@ class VideoTranscriber {
     this.dlTranslation      = document.getElementById('downloadTranslation');
     this.dlSummary          = document.getElementById('downloadSummary');
     this.dlVideo            = document.getElementById('downloadVideo');
+    this.copyScript         = document.getElementById('copyScript');
+    this.copyTranslation    = document.getElementById('copyTranslation');
+    this.copySummary        = document.getElementById('copySummary');
     this.keepVideo          = document.getElementById('keepVideo');
     this.mediaBlock         = document.getElementById('mediaBlock');
     this.mediaFrame         = document.getElementById('mediaFrame');
@@ -188,6 +199,7 @@ class VideoTranscriber {
     this.fileInput          = document.getElementById('fileInput');
     this.uploadMaxMb        = 200;
     this._allowedUploadExts = new Set(['.txt', '.mp3', '.mp4', '.m4a', '.wav', '.webm', '.mkv', '.ogg', '.flac']);
+    this._markdown = {};
     // 当前结果对应的原视频/音频（由 _renderMedia 填充）
     this._mediaFile = null;
     this._mediaName = null;
@@ -227,19 +239,22 @@ class VideoTranscriber {
       btn.addEventListener('click', () => this._switchTab(btn.dataset.tab));
     });
 
-    // Downloads — the tab icons fire without activating their tab, so you can
-    // grab the summary while still reading the transcript.
-    const bindTabDl = (el, type) => {
+    // Copy/download — the tab icons fire without activating their tab, so you
+    // can grab the summary while still reading the transcript.
+    const bindTabAction = (el, action) => {
       if (!el) return;
       el.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this._downloadFile(type);
+        action();
       });
     };
-    bindTabDl(this.dlScript,      'script');
-    bindTabDl(this.dlTranslation, 'translation');
-    bindTabDl(this.dlSummary,     'summary');
+    bindTabAction(this.dlScript,        () => this._downloadFile('script'));
+    bindTabAction(this.dlTranslation,   () => this._downloadFile('translation'));
+    bindTabAction(this.dlSummary,       () => this._downloadFile('summary'));
+    bindTabAction(this.copyScript,      () => this._copyMarkdown('script', this.copyScript));
+    bindTabAction(this.copyTranslation, () => this._copyMarkdown('translation', this.copyTranslation));
+    bindTabAction(this.copySummary,     () => this._copyMarkdown('summary', this.copySummary));
     if (this.dlVideo) this.dlVideo.addEventListener('click', () => this._downloadMedia());
 
     if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
@@ -731,6 +746,7 @@ class VideoTranscriber {
     const script      = task.script;
     const summary     = task.summary;
     const translation = task.translation;
+    this._markdown = { script, summary, translation };
 
     this.scriptContent.innerHTML  = script    ? marked.parse(script)      : '';
     this.summaryContent.innerHTML = summary   ? marked.parse(summary)     : '';
@@ -873,6 +889,39 @@ class VideoTranscriber {
     } catch (e) {
       this._showError(this.t('error_download_failed') + e.message);
     }
+  }
+
+  /* ── Copy ─────────────────────────────────────────────── */
+  async _copyMarkdown(type, btn) {
+    const text = this._markdown[type];
+    if (!text) { this._showError(this.t('error_no_download')); return; }
+    try {
+      await this._writeClipboard(text);
+    } catch (e) {
+      this._showError(this.t('error_copy_failed') + e.message);
+      return;
+    }
+    const icon = btn.querySelector('i');
+    icon.className = 'fas fa-check';
+    clearTimeout(btn._copyReset);
+    btn._copyReset = setTimeout(() => { icon.className = 'fas fa-copy'; }, 1500);
+  }
+
+  async _writeClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    // navigator.clipboard is undefined over plain http, e.g. the Docker image opened by LAN IP
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (!ok) throw new Error('clipboard unavailable');
   }
 
   /* ── UI helpers ───────────────────────────────────────── */

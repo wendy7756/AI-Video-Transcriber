@@ -589,7 +589,7 @@
       flex-wrap: wrap;
     }
 
-    /* Label + its own download icon share one underline */
+    /* Label + its own copy/download icons share one underline */
     .tab-item {
       display: flex;
       align-items: center;
@@ -964,12 +964,15 @@
 
     <!-- Results -->
     <div class="results-panel" id="resultsPanel">
-      <!-- Each tab carries its own download icon; the icons work without
+      <!-- Each tab carries its own copy/download icons; the icons work without
            activating the tab first. -->
       <div class="tab-bar">
         <div class="tab-item active" data-tab="script">
           <button class="tab-btn" data-tab="script">
             <span data-i18n="transcript_text">Transcript</span>
+          </button>
+          <button class="tab-dl" id="copyScript" data-i18n-title="copy_transcript" title="Copy">
+            <i class="fas fa-copy"></i>
           </button>
           <button class="tab-dl" id="downloadScript" data-i18n-title="download_transcript" title="Transcript">
             <i class="fas fa-circle-down"></i>
@@ -979,6 +982,9 @@
           <button class="tab-btn" data-tab="summary">
             <span data-i18n="intelligent_summary">AI Summary</span>
           </button>
+          <button class="tab-dl" id="copySummary" data-i18n-title="copy_summary" title="Copy">
+            <i class="fas fa-copy"></i>
+          </button>
           <button class="tab-dl" id="downloadSummary" data-i18n-title="download_summary" title="Summary">
             <i class="fas fa-circle-down"></i>
           </button>
@@ -986,6 +992,9 @@
         <div class="tab-item" data-tab="translation" id="translationTabItem" style="display:none;">
           <button class="tab-btn" data-tab="translation">
             <span data-i18n="translation">Translation</span>
+          </button>
+          <button class="tab-dl" id="copyTranslation" data-i18n-title="copy_translation" title="Copy">
+            <i class="fas fa-copy"></i>
           </button>
           <button class="tab-dl" id="downloadTranslation" data-i18n-title="download_translation" title="Translation">
             <i class="fas fa-circle-down"></i>
@@ -1035,6 +1044,6 @@
   </div>
 </main>
 
-<script src="/static/app.js?v=20260818"></script>
+<script src="/static/app.js?v=20261006"></script>
 </body>
 </html>

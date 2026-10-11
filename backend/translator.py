@@ -5,6 +5,7 @@ from typing import Optional
 
 from openai import OpenAI
 
+from llm_client import complete_text
 from llm_sanitize import strip_llm_artifacts
 
 logger = logging.getLogger(__name__)
@@ -246,7 +247,8 @@ class Translator:
 只返回翻译结果，不要添加任何说明。"""
 
         try:
-            response = self.client.chat.completions.create(
+            content = await complete_text(
+                self.client,
                 model=self._translation_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -256,7 +258,7 @@ class Translator:
                 temperature=0.1
             )
 
-            return strip_llm_artifacts(response.choices[0].message.content or "")
+            return strip_llm_artifacts(content)
         except Exception as e:
             logger.error(f"单文本翻译失败: {e}")
             return text
@@ -290,7 +292,8 @@ class Translator:
 只返回翻译结果。"""
 
             try:
-                response = self.client.chat.completions.create(
+                content = await complete_text(
+                    self.client,
                     model=self._translation_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -300,7 +303,7 @@ class Translator:
                     temperature=0.1
                 )
 
-                translated_chunk = response.choices[0].message.content or ""
+                translated_chunk = content
                 translated_chunks.append(strip_llm_artifacts(translated_chunk))
             except Exception as e:
                 logger.error(f"翻译第 {i+1} 块失败: {e}")

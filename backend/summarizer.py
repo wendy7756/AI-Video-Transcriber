@@ -3,6 +3,7 @@ import openai
 import logging
 from typing import Optional
 
+from llm_client import complete_text
 from llm_sanitize import strip_llm_artifacts
 
 logger = logging.getLogger(__name__)
@@ -77,9 +78,15 @@ class Summarizer:
 
             if len(preprocessed) > max_chars_per_chunk:
                 logger.info(f"文本较长({len(preprocessed)} chars)，启用分块优化")
-                return await self._format_long_transcript_in_chunks(preprocessed, detected_lang_code, max_chars_per_chunk)
+                optimized = await self._format_long_transcript_in_chunks(preprocessed, detected_lang_code, max_chars_per_chunk)
             else:
-                return await self._format_single_chunk(preprocessed, detected_lang_code)
+                optimized = await self._format_single_chunk(preprocessed, detected_lang_code)
+
+            # 有语音的转录绝不能以空文稿收尾：后续摘要/翻译都以此为输入
+            if not optimized.strip() and preprocessed.strip():
+                logger.warning("优化结果为空，返回原始转录文本")
+                return raw_transcript
+            return optimized
 
         except Exception as e:
             logger.error(f"优化转录文本失败: {str(e)}")
@@ -173,7 +180,8 @@ class Summarizer:
 
 请特别注意修复因时间戳分割导致的句子不完整问题，并进行合理的段落划分！"""
 
-        response = self.client.chat.completions.create(
+        content = await complete_text(
+            self.client,
             model=self.fast_model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -183,7 +191,7 @@ class Summarizer:
             temperature=0.1
         )
         
-        return strip_llm_artifacts(response.choices[0].message.content or "")
+        return strip_llm_artifacts(content)
 
     async def _optimize_with_chunks(self, raw_transcript: str, max_tokens: int) -> str:
         """
@@ -221,7 +229,8 @@ class Summarizer:
 输出清理后的文本，保持原文结构。"""
 
             try:
-                response = self.client.chat.completions.create(
+                content = await complete_text(
+                    self.client,
                     model=self.fast_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -231,7 +240,7 @@ class Summarizer:
                     temperature=0.1
                 )
                 
-                optimized_chunk = strip_llm_artifacts(response.choices[0].message.content or "")
+                optimized_chunk = strip_llm_artifacts(content)
                 optimized_chunks.append(optimized_chunk)
                 
             except Exception as e:
@@ -309,7 +318,8 @@ class Summarizer:
             )
 
         try:
-            response = self.client.chat.completions.create(
+            content = await complete_text(
+                self.client,
                 model=self.fast_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -318,7 +328,7 @@ class Summarizer:
                 max_tokens=4000,  # 对齐JS：优化/格式化阶段最大tokens≈4000
                 temperature=0.1
             )
-            optimized_text = strip_llm_artifacts(response.choices[0].message.content or "")
+            optimized_text = strip_llm_artifacts(content)
             # 移除诸如 "# Transcript" / "## Transcript" 等标题
             optimized_text = self._remove_transcript_heading(optimized_text)
             enforced = self._enforce_paragraph_max_chars(optimized_text.strip(), max_chars=400)
@@ -792,7 +802,8 @@ class Summarizer:
 
 重新分段后的文本："""
 
-            response = self.client.chat.completions.create(
+            content = await complete_text(
+                self.client,
                 model=self.advanced_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -802,7 +813,7 @@ class Summarizer:
                 temperature=0.05  # 降低温度，提高一致性
             )
             
-            organized_text = strip_llm_artifacts(response.choices[0].message.content or "")
+            organized_text = strip_llm_artifacts(content)
             
             # 工程验证：检查段落长度
             validated_text = self._validate_paragraph_lengths(organized_text)
@@ -871,7 +882,8 @@ Core requirements:
 
 {text}"""
 
-        response = self.client.chat.completions.create(
+        content = await complete_text(
+            self.client,
             model=self.advanced_model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -881,7 +893,7 @@ Core requirements:
             temperature=0.05
         )
         
-        return strip_llm_artifacts(response.choices[0].message.content or "")
+        return strip_llm_artifacts(content)
 
     def _validate_paragraph_lengths(self, text: str) -> str:
         """
@@ -1026,7 +1038,8 @@ Output ONLY the summary body in {language_name}."""
         logger.info(f"正在生成{language_name}摘要...")
         
         # 调用OpenAI API
-        response = self.client.chat.completions.create(
+        content = await complete_text(
+            self.client,
             model=self.advanced_model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -1036,7 +1049,7 @@ Output ONLY the summary body in {language_name}."""
             temperature=0.25
         )
         
-        summary = strip_llm_artifacts(response.choices[0].message.content or "")
+        summary = strip_llm_artifacts(content)
 
         return self._format_summary_with_meta(summary, target_language, video_title)
 
@@ -1072,7 +1085,8 @@ Rules:
 Output content only, no headings like "Summary:"."""
 
             try:
-                response = self.client.chat.completions.create(
+                content = await complete_text(
+                    self.client,
                     model=self.advanced_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -1082,7 +1096,7 @@ Output content only, no headings like "Summary:"."""
                     temperature=0.25
                 )
                 
-                chunk_summary = strip_llm_artifacts(response.choices[0].message.content or "")
+                chunk_summary = strip_llm_artifacts(content)
                 chunk_summaries.append(chunk_summary)
                 
             except Exception as e:
@@ -1164,7 +1178,8 @@ Rules:
 
 {combined_summaries}"""
 
-            response = self.client.chat.completions.create(
+            content = await complete_text(
+                self.client,
                 model=self.advanced_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -1174,7 +1189,7 @@ Rules:
                 temperature=0.25
             )
 
-            return strip_llm_artifacts(response.choices[0].message.content or "")
+            return strip_llm_artifacts(content)
         except Exception as e:
             logger.error(f"整合摘要失败: {e}")
             # 失败时直接合并

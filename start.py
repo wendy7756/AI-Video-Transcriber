@@ -118,7 +118,9 @@ def main():
         cmd = [
             sys.executable, "-m", "uvicorn", "main:app",
             "--host", host,
-            "--port", str(port)
+            "--port", str(port),
+            # SSE 进度连接不会自己结束，不设超时的话热重载/停止服务会无限等待
+            "--timeout-graceful-shutdown", "3",
         ]
         
         # 只在开发模式下启用热重载

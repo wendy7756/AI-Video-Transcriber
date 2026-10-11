@@ -5,6 +5,9 @@ from fastapi.staticfiles import StaticFiles
 import os
 import asyncio
 import logging
+import threading
+import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 import aiofiles
@@ -32,7 +35,27 @@ from pipeline import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="AI视频转录器", version="1.0.0")
+# 关闭后仍未结束的后台线程，最多再等这么多秒就强制退出；None 表示不强制（测试用）
+SHUTDOWN_FORCE_EXIT_SECONDS: Optional[float] = 3
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    # LLM 调用、Whisper 转录、yt-dlp 下载都跑在线程里，无法中断；Python 退出时会等它们跑完，
+    # 热重载因此可能卡上几分钟。未完成的任务会在下次启动时被标记为中断。
+    if SHUTDOWN_FORCE_EXIT_SECONDS is None:
+        return
+
+    def force_exit():
+        time.sleep(SHUTDOWN_FORCE_EXIT_SECONDS)
+        logger.warning("关闭超时，仍有后台线程未结束，强制退出进程")
+        os._exit(0)
+
+    threading.Thread(target=force_exit, daemon=True).start()
+
+
+app = FastAPI(title="AI视频转录器", version="1.0.0", lifespan=lifespan)
 
 # CORS中间件配置
 app.add_middleware(
@@ -43,6 +66,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def revalidate_frontend(request, call_next):
+    """页面与前端静态文件每次都向服务器确认（命中时仅返回 304）。
+
+    不带 Cache-Control 时浏览器会按 Last-Modified 自行缓存数天，
+    改了 app.js 后用户仍跑旧代码，而新的 index.html 已生效，两者对不上。
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if (path == "/" or path.startswith("/static/")) and "cache-control" not in response.headers:
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # 获取项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -50,7 +88,8 @@ PROJECT_ROOT = Path(__file__).parent.parent
 app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="static")
 
 # 创建临时目录
-TEMP_DIR = PROJECT_ROOT / "temp"
+# TRANSCRIBER_TEMP_DIR 供测试隔离使用，避免读写真实的 temp/tasks.json
+TEMP_DIR = Path(os.getenv("TRANSCRIBER_TEMP_DIR") or PROJECT_ROOT / "temp")
 TEMP_DIR.mkdir(exist_ok=True)
 
 # 初始化处理器
@@ -60,8 +99,6 @@ summarizer = Summarizer()
 translator = Translator()
 
 # 存储任务状态 - 使用文件持久化
-import threading
-
 TASKS_FILE = TEMP_DIR / "tasks.json"
 tasks_lock = threading.Lock()
 
@@ -105,14 +142,72 @@ async def broadcast_task_update(task_id: str, task_data: dict):
         if not sse_connections[task_id]:
             del sse_connections[task_id]
 
+INTERRUPTED_MESSAGE = "服务重启，任务已中断，请重新提交"
+
+
+def mark_interrupted_tasks(tasks_data: dict) -> int:
+    """把上次进程遗留的 processing 任务标记为失败。
+
+    进程重启后这些任务已无协程在跑，若保持 processing，前端订阅后会永远卡在旧进度。
+    """
+    count = 0
+    for task in tasks_data.values():
+        if task.get("status") == "processing":
+            task.update({
+                "status": "error",
+                "error": INTERRUPTED_MESSAGE,
+                "message": INTERRUPTED_MESSAGE,
+            })
+            count += 1
+    return count
+
+
 # 启动时加载任务状态
 tasks = load_tasks()
+if mark_interrupted_tasks(tasks):
+    save_tasks(tasks)
 # 存储正在处理的URL，防止重复处理
 processing_urls = set()
 # 存储活跃的任务对象，用于控制和取消
 active_tasks = {}
 # 存储SSE连接，用于实时推送状态更新
 sse_connections = {}
+
+SUPERSEDED_MESSAGE = "已被同一链接的新任务（不同模型或摘要语言）取代"
+
+
+def task_settings(summary_language: str, model_base_url: str, model_id: str) -> dict:
+    """决定处理结果的设置；同一链接只有这些都相同时才复用正在跑的任务。"""
+    return {
+        "summary_language": (summary_language or "").strip(),
+        "model_base_url": (model_base_url or "").strip().rstrip("/"),
+        "model_id": (model_id or "").strip(),
+    }
+
+
+def find_running_task(url: str) -> Optional[str]:
+    """返回当前进程里确实还在执行、且链接相同的任务 ID。"""
+    for tid, job in active_tasks.items():
+        if not job.done() and tasks.get(tid, {}).get("url") == url:
+            return tid
+    return None
+
+
+async def supersede_task(task_id: str) -> None:
+    """取消旧任务并把它标记为失败，让仍在订阅它的页面收到终态。
+
+    LLM 调用跑在线程里无法中途打断，协程会在当前这次调用返回后才真正退出。
+    """
+    job = active_tasks.pop(task_id, None)
+    if job is not None and not job.done():
+        job.cancel()
+    tasks[task_id].update({
+        "status": "error",
+        "error": SUPERSEDED_MESSAGE,
+        "message": SUPERSEDED_MESSAGE,
+    })
+    save_tasks(tasks)
+    await broadcast_task_update(task_id, tasks[task_id])
 
 # 本地上传：允许的类型与大小上限（MB），可用环境变量 UPLOAD_MAX_MB 调整
 UPLOAD_MAX_MB = int(os.getenv("UPLOAD_MAX_MB", "200"))
@@ -551,13 +646,15 @@ async def process_video(
 
         url = stripped
 
-        # 检查是否已经在处理相同的URL
-        if url in processing_urls:
-            # 查找现有任务
-            for tid, task in tasks.items():
-                if task.get("url") == url:
-                    return {"task_id": tid, "message": "该视频正在处理中，请等待..."}
-            
+        # 同一链接正在处理：设置相同则复用，换了模型或摘要语言则取消旧任务重新开始
+        settings = task_settings(summary_language, model_base_url, model_id)
+        running_id = find_running_task(url)
+        if running_id:
+            if tasks[running_id].get("settings") == settings:
+                return {"task_id": running_id, "message": "该视频正在处理中，请等待..."}
+            logger.info(f"链接 {url} 的设置已变更，取消旧任务 {running_id} 并新建任务")
+            await supersede_task(running_id)
+
         # 生成唯一任务ID
         task_id = str(uuid.uuid4())
         
@@ -572,7 +669,8 @@ async def process_video(
             "script": None,
             "summary": None,
             "error": None,
-            "url": url  # 保存URL用于去重
+            "url": url,  # 保存URL用于去重
+            "settings": settings,
         }
         save_tasks(tasks)
         
@@ -718,6 +816,13 @@ async def process_video_task(
         # 不要立即删除临时文件！保留给用户下载
         # 文件会在一定时间后自动清理或用户手动清理
 
+    except asyncio.CancelledError:
+        # 被新任务取代或被删除；CancelledError 不是 Exception，下面的分支接不住。
+        # 状态与 active_tasks 已由取消方处理，这里只停掉原视频下载。
+        logger.info(f"任务 {task_id} 已取消")
+        if media_task is not None and not media_task.done():
+            media_task.cancel()
+        raise
     except Exception as e:
         logger.error(f"任务 {task_id} 处理失败: {str(e)}")
         # 主流程已失败，不要让原视频下载在后台继续跑
@@ -879,6 +984,9 @@ async def task_stream(task_id: str):
             # 立即发送当前状态
             current_task = tasks.get(task_id, {})
             yield f"data: {json.dumps(current_task, ensure_ascii=False)}\n\n"
+            # 任务已结束就不再挂着连接，否则这条流永远不会关闭
+            if current_task.get("status") in ["completed", "error"]:
+                return
             
             # 持续监听状态更新
             while True:

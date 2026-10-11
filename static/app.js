@@ -32,6 +32,8 @@ class VideoTranscriber {
         summary_language:        'Summary Language',
         processing_progress:     'Processing',
         preparing:               'Preparing…',
+        starting_video:          'Starting to process video…',
+        starting_upload:         'Processing uploaded file…',
         transcript_text:         'Transcript',
         intelligent_summary:     'AI Summary',
         translation:             'Translation',
@@ -45,6 +47,7 @@ class VideoTranscriber {
         parsing_video:           'Parsing video info…',
         transcribing_audio:      'Transcribing audio…',
         optimizing_transcript:   'Optimizing transcript…',
+        generating_translation:  'Translating…',
         generating_summary:      'Generating summary…',
         detecting_subtitles:     'Detecting subtitles…',
         subtitle_found:          'Subtitles found! Processing text…',
@@ -90,6 +93,8 @@ class VideoTranscriber {
         summary_language:        '摘要语言',
         processing_progress:     '处理进度',
         preparing:               '准备中…',
+        starting_video:          '开始处理视频…',
+        starting_upload:         '开始处理上传文件…',
         transcript_text:         '转录文本',
         intelligent_summary:     '智能摘要',
         translation:             '翻译',
@@ -103,6 +108,7 @@ class VideoTranscriber {
         parsing_video:           '正在解析视频信息…',
         transcribing_audio:      '正在转录音频…',
         optimizing_transcript:   '正在优化转录文本…',
+        generating_translation:  '正在生成翻译…',
         generating_summary:      '正在生成摘要…',
         detecting_subtitles:     '正在检测字幕…',
         subtitle_found:          '字幕获取成功！正在处理文本…',
@@ -169,8 +175,7 @@ class VideoTranscriber {
     this.mediaFrame         = document.getElementById('mediaFrame');
     this.mediaMeta          = document.getElementById('mediaMeta');
     this.translationTabItem = document.getElementById('translationTabItem');
-    this.summaryTabItem     = document.getElementById('summaryTabItem');
-    this.noSpeechBanner     = document.getElementById('noSpeechBanner');
+    this.summaryTabItem     = document.getElementById('summaryTabItem');    this.noSpeechBanner     = document.getElementById('noSpeechBanner');
     this.tabBtns            = document.querySelectorAll('.tab-btn');
     this.tabItems           = document.querySelectorAll('.tab-item');
     this.tabPanes           = document.querySelectorAll('.tab-pane');
@@ -616,8 +621,10 @@ class VideoTranscriber {
     // ── 其他阶段 ───────────────────────────────────────────────
     else if (m.includes('解析') || m.includes('pars'))                     { this.sp.stage = 'parsing';       this.sp.target = 60; }
     else if (m.includes('下载') || m.includes('download'))                 { this.sp.stage = 'downloading';   this.sp.target = 60; }
-    else if (m.includes('转录') || m.includes('transcrib') || m.includes('whisper')) { this.sp.stage = 'transcribing';  this.sp.target = 80; }
+    // 「正在优化转录文本」也含「转录」，优化须先判断
     else if (m.includes('优化') || m.includes('optimiz'))                  { this.sp.stage = 'optimizing';    this.sp.target = 90; }
+    else if (m.includes('转录') || m.includes('transcrib') || m.includes('whisper')) { this.sp.stage = 'transcribing';  this.sp.target = 80; }
+    else if (m.includes('翻译') || m.includes('translat'))                 { this.sp.stage = 'translating';   this.sp.target = 79; }
     else if (m.includes('摘要') || m.includes('summary'))                  { this.sp.stage = 'summarizing';   this.sp.target = 95; }
     else if (m.includes('完成') || m.includes('complet'))                  { this.sp.stage = 'completed';     this.sp.target = 100; }
 
@@ -655,7 +662,7 @@ class VideoTranscriber {
   }
   _tickSP() {
     if (!this.sp.enabled || this.sp.current >= this.sp.target) return;
-    const speeds = { subtitle: .5, parsing: .3, downloading: .18, transcribing: .14, optimizing: .22, summarizing: .28, finalizing: .16 };
+    const speeds = { subtitle: .5, parsing: .3, downloading: .18, transcribing: .14, optimizing: .22, translating: .22, summarizing: .28, finalizing: .16 };
     let inc = speeds[this.sp.stage] || .2;
     const remaining = this.sp.target - this.sp.current;
     if (remaining < 5) inc *= .3;
@@ -673,6 +680,7 @@ class VideoTranscriber {
       parsing:        this.t('parsing_video'),
       transcribing:   this.t('transcribing_audio'),
       optimizing:     this.t('optimizing_transcript'),
+      translating:    this.t('generating_translation'),
       summarizing:    this.t('generating_summary'),
       finalizing:     this.t('preparing_video'),
       completed:      this.t('completed'),
@@ -692,13 +700,18 @@ class VideoTranscriber {
     if      (m.includes('获取成功') || m.includes('subtitle found'))        label = this.t('subtitle_found');
     else if (m.includes('未找到字幕') || m.includes('no subtitle'))         label = this.t('no_subtitle');
     else if (m.includes('检测') && (m.includes('字幕') || m.includes('subtitle'))) label = this.t('detecting_subtitles');
+    // ── Task start ─────────────────────────────────────────────
+    else if (m.includes('开始处理上传') || m.includes('uploaded file')) label = this.t('starting_upload');
+    else if (m.includes('开始处理') || m.includes('starting to process')) label = this.t('starting_video');
     // ── Original video (before the generic download/prepare checks) ──
     else if (m.includes('原视频') || m.includes('original video')) label = this.t('preparing_video');
     // ── Audio / Whisper path ────────────────────────────────────
     else if (m.includes('下载') || m.includes('download'))  label = this.t('downloading_video');
     else if (m.includes('解析') || m.includes('pars'))      label = this.t('parsing_video');
-    else if (m.includes('转录') || m.includes('transcrib')) label = this.t('transcribing_audio');
+    // 「正在优化转录文本」也含「转录」，优化须先判断
     else if (m.includes('优化') || m.includes('optimiz'))   label = this.t('optimizing_transcript');
+    else if (m.includes('转录') || m.includes('transcrib')) label = this.t('transcribing_audio');
+    else if (m.includes('翻译') || m.includes('translat'))  label = this.t('generating_translation');
     else if (m.includes('摘要') || m.includes('summary'))   label = this.t('generating_summary');
     else if (m.includes('完成') || m.includes('complet'))   label = this.t('completed');
     else if (m.includes('准备') || m.includes('prepar'))    label = this.t('preparing');
@@ -756,7 +769,8 @@ class VideoTranscriber {
     // Self-sufficient: don't rely on _showProgress() having hidden the empty state
     this.emptyState.style.display = 'none';
     this.resultsPanel.classList.add('show');
-    this._switchTab('script');
+    // Tab order is Summary → Translation → Transcript; with no speech only the transcript is shown
+    this._switchTab(noSpeech ? 'script' : 'summary');
     this.resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 

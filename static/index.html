@@ -967,15 +967,7 @@
       <!-- Each tab carries its own download icon; the icons work without
            activating the tab first. -->
       <div class="tab-bar">
-        <div class="tab-item active" data-tab="script">
-          <button class="tab-btn" data-tab="script">
-            <span data-i18n="transcript_text">Transcript</span>
-          </button>
-          <button class="tab-dl" id="downloadScript" data-i18n-title="download_transcript" title="Transcript">
-            <i class="fas fa-circle-down"></i>
-          </button>
-        </div>
-        <div class="tab-item" data-tab="summary" id="summaryTabItem">
+        <div class="tab-item active" data-tab="summary" id="summaryTabItem">
           <button class="tab-btn" data-tab="summary">
             <span data-i18n="intelligent_summary">AI Summary</span>
           </button>
@@ -988,6 +980,14 @@
             <span data-i18n="translation">Translation</span>
           </button>
           <button class="tab-dl" id="downloadTranslation" data-i18n-title="download_translation" title="Translation">
+            <i class="fas fa-circle-down"></i>
+          </button>
+        </div>
+        <div class="tab-item" data-tab="script" id="scriptTabItem">
+          <button class="tab-btn" data-tab="script">
+            <span data-i18n="transcript_text">Transcript</span>
+          </button>
+          <button class="tab-dl" id="downloadScript" data-i18n-title="download_transcript" title="Transcript">
             <i class="fas fa-circle-down"></i>
           </button>
         </div>
@@ -1005,10 +1005,10 @@
         <span data-i18n="no_speech_notice">No speech detected in this video, so there is nothing to transcribe. Summary and translation are skipped — the original video is still available below.</span>
       </div>
 
-      <div id="scriptTab" class="tab-pane active">
+      <div id="scriptTab" class="tab-pane">
         <div class="md-content" id="scriptContent"></div>
       </div>
-      <div id="summaryTab" class="tab-pane">
+      <div id="summaryTab" class="tab-pane active">
         <div class="md-content" id="summaryContent"></div>
       </div>
       <div id="translationTab" class="tab-pane">
@@ -1035,6 +1035,6 @@
   </div>
 </main>
 
-<script src="/static/app.js?v=20260818"></script>
+<script src="/static/app.js?v=20261011"></script>
 </body>
 </html>

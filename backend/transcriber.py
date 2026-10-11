@@ -1,4 +1,5 @@
 import os
+import re
 from faster_whisper import WhisperModel
 import logging
 from typing import Optional
@@ -152,11 +153,13 @@ class Transcriber:
             return self.last_detected_language
         
         # 如果提供了转录文本，尝试从中提取语言信息
-        if transcript_text and "**Detected Language:**" in transcript_text:
-            lines = transcript_text.split('\n')
-            for line in lines:
-                if "**Detected Language:**" in line:
-                    lang = line.split(":")[-1].strip()
-                    return lang if lang else None
+        marker = "**Detected Language:**"
+        if transcript_text and marker in transcript_text:
+            for line in transcript_text.split('\n'):
+                if marker in line:
+                    # 文本文件输入时这一行是空的（"**Detected Language:**"），旧写法按冒号切会取到 "**"。
+                    # 只接受形如 en / yue / zh-Hans 的语言代码，否则交给调用方按正文推断。
+                    lang = line.split(marker, 1)[1].strip().strip("*").strip()
+                    return lang if re.fullmatch(r"[A-Za-z]{2,3}([-_][A-Za-z0-9]+)*", lang) else None
         
         return None
